@@ -1,0 +1,20 @@
+# dependencies & build
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# secrets: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# logs & OS/editor files
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# load-test output
+k6/results/

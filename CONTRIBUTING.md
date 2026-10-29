@@ -49,6 +49,15 @@ own line.
 - Generated migrations get a timestamp in the file name, so two people
   never collide on a version number.
 - Each migration touches only your module's tables.
+- If you hand-write a migration, give constraints and indexes explicit
+  names and use the same names in the entity (`@Unique('name', [...])`,
+  `@Index('name')`, `foreignKeyConstraintName`). Otherwise TypeORM sees a
+  difference and the next generated migration drops and recreates them.
+- Check that entities and the database agree (expect "No changes"):
+
+```bash
+npm run typeorm -- migration:generate src/database/migrations/Check --dryrun
+```
 
 ## Secrets
 

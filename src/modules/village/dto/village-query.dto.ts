@@ -17,6 +17,11 @@ export class VillageQueryDto extends PaginationQueryDto {
   @IsUUID()
   governorateId?: string;
 
+  @ApiPropertyOptional({ format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  municipalityId?: string;
+
   @ApiPropertyOptional({ enum: VILLAGE_SORT_FIELDS, default: 'nameAr' })
   @IsOptional()
   @IsIn(VILLAGE_SORT_FIELDS)

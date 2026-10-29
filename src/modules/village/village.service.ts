@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { escapeLike } from '../../common/database/escape-like';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { VillageQueryDto } from './dto/village-query.dto';
 import { VillageResponseDto } from './dto/village-response.dto';
@@ -18,7 +19,8 @@ export class VillageService {
   ): Promise<Paginated<VillageResponseDto>> {
     const qb = this.villages
       .createQueryBuilder('v')
-      .innerJoinAndSelect('v.governorate', 'g');
+      .innerJoinAndSelect('v.governorate', 'g')
+      .leftJoinAndSelect('v.municipality', 'm');
 
     if (query.q) {
       qb.andWhere('(v.nameAr ILIKE :q OR v.nameEn ILIKE :q)', {
@@ -27,6 +29,9 @@ export class VillageService {
     }
     if (query.governorateId) {
       qb.andWhere('v.governorateId = :gid', { gid: query.governorateId });
+    }
+    if (query.municipalityId) {
+      qb.andWhere('v.municipalityId = :mid', { mid: query.municipalityId });
     }
 
     const [rows, total] = await qb
@@ -49,13 +54,9 @@ export class VillageService {
   async findOne(id: string): Promise<VillageResponseDto> {
     const village = await this.villages.findOne({
       where: { id },
-      relations: { governorate: true },
+      relations: { governorate: true, municipality: true },
     });
     if (!village) throw new NotFoundException(`Village ${id} not found`);
     return VillageResponseDto.from(village);
   }
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }

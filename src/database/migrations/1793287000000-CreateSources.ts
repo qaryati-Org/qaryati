@@ -17,7 +17,8 @@ export class CreateSources1793287000000 implements MigrationInterface {
         "url" text,
         "year" integer,
         "created_at" timestamptz NOT NULL DEFAULT now(),
-        "updated_at" timestamptz NOT NULL DEFAULT now()
+        "updated_at" timestamptz NOT NULL DEFAULT now(),
+        CONSTRAINT "chk_sources_year_range" CHECK ("year" BETWEEN 1 AND 2100)
       )`);
   }
 

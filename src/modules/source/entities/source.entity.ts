@@ -1,4 +1,4 @@
-import { Column, Entity } from 'typeorm';
+import { Check, Column, Entity } from 'typeorm';
 import { BaseEntity } from '../../../common/entities/base.entity';
 
 export enum SourceType {
@@ -10,7 +10,9 @@ export enum SourceType {
   OTHER = 'OTHER',
 }
 
+// Constraint names match the migration so `migration:generate` sees no drift.
 @Entity('sources')
+@Check('chk_sources_year_range', '"year" BETWEEN 1 AND 2100')
 export class Source extends BaseEntity {
   @Column({ type: 'varchar', length: 255 })
   title!: string;

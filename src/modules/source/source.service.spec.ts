@@ -3,6 +3,10 @@ import { QueryFailedError, Repository } from 'typeorm';
 import { SourceService } from './source.service';
 import { Source, SourceType } from './entities/source.entity';
 
+// A driver error is an Error carrying a Postgres code.
+const pgError = (code: string): Error =>
+  Object.assign(new Error(`database error ${code}`), { code });
+
 describe('SourceService', () => {
   const now = new Date('2026-01-01T00:00:00Z');
   const sourceRow = (overrides: Partial<Source> = {}): Source => ({
@@ -123,13 +127,7 @@ describe('SourceService', () => {
     it('throws ConflictException when another record references the source', async () => {
       repo.findOneBy.mockResolvedValue(sourceRow());
       repo.remove.mockRejectedValue(
-        new QueryFailedError(
-          'DELETE',
-          [],
-          Object.assign(new Error('Foreign key violation'), {
-            code: '23503',
-          }),
-        ),
+        new QueryFailedError('DELETE', [], pgError('23503')),
       );
 
       await expect(service.remove('source-1')).rejects.toBeInstanceOf(
@@ -138,11 +136,7 @@ describe('SourceService', () => {
     });
 
     it('rethrows unrelated database errors unchanged', async () => {
-      const failure = new QueryFailedError(
-        'DELETE',
-        [],
-        Object.assign(new Error('Connection failure'), { code: '08006' }),
-      );
+      const failure = new QueryFailedError('DELETE', [], pgError('08006'));
       repo.findOneBy.mockResolvedValue(sourceRow());
       repo.remove.mockRejectedValue(failure);
 

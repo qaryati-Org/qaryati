@@ -1,4 +1,8 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { QueryFailedError, Repository } from 'typeorm';
 import { SourceService } from './source.service';
 import { Source, SourceType } from './entities/source.entity';
@@ -160,11 +164,11 @@ describe('SourceService', () => {
       await expect(service.ensureExists('source-1')).resolves.toBeUndefined();
     });
 
-    it('throws NotFoundException when the source does not exist', async () => {
+    it('throws 422 when the source does not exist', async () => {
       repo.existsBy.mockResolvedValue(false);
 
       await expect(service.ensureExists('missing')).rejects.toBeInstanceOf(
-        NotFoundException,
+        UnprocessableEntityException,
       );
     });
   });

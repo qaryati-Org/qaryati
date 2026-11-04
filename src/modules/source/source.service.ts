@@ -2,6 +2,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
@@ -61,10 +62,10 @@ export class SourceService {
     return SourceResponseDto.from(source);
   }
 
-  // Other modules use this to return a 404 for an unknown sourceId.
+  // For other modules validating a sourceId in a request body. The source is not the resource in the URL, so an unknown id is a 422, not a 404: a 404 would look as if the main resource (e.g. the village) did not exist.
   async ensureExists(id: string): Promise<void> {
     if (!(await this.sources.existsBy({ id }))) {
-      throw new NotFoundException(`Source ${id} not found`);
+      throw new UnprocessableEntityException(`Source ${id} does not exist`);
     }
   }
 

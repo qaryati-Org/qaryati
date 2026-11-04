@@ -7,6 +7,7 @@ import { envValidationSchema } from './config/env.validation';
 import { buildDataSourceOptions } from './database/typeorm.options';
 import { HealthModule } from './health/health.module';
 import { SourceModule } from './modules/source/source.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { VillageModule } from './modules/village/village.module';
 
 @Module({
@@ -26,6 +27,7 @@ import { VillageModule } from './modules/village/village.module';
     // Feature modules: one line per module, each owned by one team member.
     VillageModule,
     SourceModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

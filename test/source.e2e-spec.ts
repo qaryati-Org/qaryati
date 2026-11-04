@@ -232,10 +232,10 @@ describe('Sources (e2e)', () => {
     });
 
     it.each([
-      [{ title: null }, 'null title'],
-      [{ type: null }, 'null type'],
-      [{ year: 3000 }, 'out-of-range year'],
-    ])('rejects a patch with %s', async (body) => {
+      { body: { title: null }, description: 'null title' },
+      { body: { type: null }, description: 'null type' },
+      { body: { year: 3000 }, description: 'out-of-range year' },
+    ])('rejects a patch with $description', async ({ body }) => {
       const res = await request(app.getHttpServer())
         .patch(`/api/v1/sources/${sourceId}`)
         .send(body)

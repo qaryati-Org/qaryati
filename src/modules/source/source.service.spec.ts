@@ -123,7 +123,13 @@ describe('SourceService', () => {
     it('throws ConflictException when another record references the source', async () => {
       repo.findOneBy.mockResolvedValue(sourceRow());
       repo.remove.mockRejectedValue(
-        new QueryFailedError('DELETE', [], { code: '23503' } as Error),
+        new QueryFailedError(
+          'DELETE',
+          [],
+          Object.assign(new Error('Foreign key violation'), {
+            code: '23503',
+          }),
+        ),
       );
 
       await expect(service.remove('source-1')).rejects.toBeInstanceOf(
@@ -132,9 +138,11 @@ describe('SourceService', () => {
     });
 
     it('rethrows unrelated database errors unchanged', async () => {
-      const failure = new QueryFailedError('DELETE', [], {
-        code: '08006',
-      } as Error);
+      const failure = new QueryFailedError(
+        'DELETE',
+        [],
+        Object.assign(new Error('Connection failure'), { code: '08006' }),
+      );
       repo.findOneBy.mockResolvedValue(sourceRow());
       repo.remove.mockRejectedValue(failure);
 

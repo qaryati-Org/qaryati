@@ -22,14 +22,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Paginated } from '../../common/pagination/paginated';
+import { Role, Roles } from '../auth';
 import { CreateSourceDto } from './dto/create-source.dto';
 import { SourceQueryDto } from './dto/source-query.dto';
 import { SourceResponseDto } from './dto/source-response.dto';
 import { UpdateSourceDto } from './dto/update-source.dto';
 import { SourceService } from './source.service';
 
-// Write endpoints are open until the auth module lands; a follow-up PR adds
-// @Roles(EDITOR) on POST/PATCH and @Roles(ADMIN) on DELETE.
+// Write endpoints declare their roles with @Roles. The global RolesGuard allows every request until JWT login exists, and enforces these roles afterwards without any change here.
 @ApiTags('sources')
 @Controller('sources')
 export class SourceController {
@@ -59,6 +59,7 @@ export class SourceController {
   }
 
   @Post()
+  @Roles(Role.EDITOR, Role.ADMIN)
   @ApiOperation({ summary: 'Create a source' })
   @ApiCreatedResponse({ type: SourceResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid source data' })
@@ -67,6 +68,7 @@ export class SourceController {
   }
 
   @Patch(':id')
+  @Roles(Role.EDITOR, Role.ADMIN)
   @ApiOperation({ summary: 'Update a source' })
   @ApiOkResponse({ type: SourceResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid source ID or data' })
@@ -79,6 +81,7 @@ export class SourceController {
   }
 
   @Delete(':id')
+  @Roles(Role.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete an unreferenced source' })
   @ApiNoContentResponse({ description: 'Source deleted' })

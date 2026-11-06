@@ -1,7 +1,10 @@
 import { ConflictException } from '@nestjs/common';
 import { VerificationStatus } from './verification-status.enum';
 
-// PENDING -> VERIFIED | REJECTED (a verifier decides); VERIFIED -> REJECTED (an error is found later); REJECTED is final: submit a corrected record instead of reopening it.
+// The review workflow, written once so every module applies the same rules:
+//   PENDING  -> VERIFIED | REJECTED   (a verifier decides)
+//   VERIFIED -> REJECTED              (an error is found later)
+//   REJECTED is final: submit a corrected record instead of reopening it.
 const ALLOWED_TRANSITIONS: Readonly<
   Record<VerificationStatus, readonly VerificationStatus[]>
 > = {

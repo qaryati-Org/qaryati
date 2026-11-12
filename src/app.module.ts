@@ -8,6 +8,7 @@ import { buildDataSourceOptions } from './database/typeorm.options';
 import { HealthModule } from './health/health.module';
 import { SourceModule } from './modules/source/source.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
 import { VillageModule } from './modules/village/village.module';
 
 @Module({
@@ -28,6 +29,7 @@ import { VillageModule } from './modules/village/village.module';
     VillageModule,
     SourceModule,
     AuthModule,
+    UsersModule,
   ],
 })
 export class AppModule {}

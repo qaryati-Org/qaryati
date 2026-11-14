@@ -6,12 +6,6 @@ import {
 } from '../interfaces/geocoding-provider.interface';
 import { RateLimiter } from '../utils/rate-limiter';
 
-interface NominatimSearchResult {
-  lat: string;
-  lon: string;
-  display_name: string;
-}
-
 class NominatimHttpError extends Error {
   constructor(
     public readonly status: number,
@@ -21,6 +15,63 @@ class NominatimHttpError extends Error {
     super(message);
     this.name = 'NominatimHttpError';
   }
+}
+
+class NominatimNetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NominatimNetworkError';
+  }
+}
+
+function parseNominatimResult(data: unknown): GeocodingResult | null {
+  if (!Array.isArray(data)) {
+    throw new Error('Invalid Nominatim response: expected an array');
+  }
+
+  if (data.length === 0) {
+    return null;
+  }
+
+  const result: unknown = data[0];
+
+  if (typeof result !== 'object' || result === null) {
+    throw new Error(
+      'Invalid Nominatim response: invalid result structure',
+    );
+  }
+
+  const record = result as Record<string, unknown>;
+
+  if (
+    typeof record.lat !== 'string' ||
+    typeof record.lon !== 'string' ||
+    typeof record.display_name !== 'string'
+  ) {
+    throw new Error(
+      'Invalid Nominatim response: invalid result structure',
+    );
+  }
+
+  const latitude = Number(record.lat);
+  const longitude = Number(record.lon);
+
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    throw new Error('Invalid Nominatim response: invalid coordinates');
+  }
+
+  return {
+    latitude,
+    longitude,
+    displayName: record.display_name,
+  };
 }
 
 @Injectable()
@@ -41,14 +92,22 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
         url.searchParams.set('format', 'jsonv2');
         url.searchParams.set('limit', '1');
 
-        const response = await this.rateLimiter.execute(() =>
-          fetch(url, {
-            headers: {
-              'User-Agent': 'Qaryati/1.0',
-            },
-            signal: AbortSignal.timeout(5000),
-          }),
-        );
+        const response = await this.rateLimiter.execute(async () => {
+          try {
+            return await fetch(url, {
+              headers: {
+                'User-Agent': 'Qaryati/1.0',
+              },
+              signal: AbortSignal.timeout(5000),
+            });
+          } catch (error) {
+            if (error instanceof TypeError) {
+              throw new NominatimNetworkError(error.message);
+            }
+
+            throw error;
+          }
+        });
 
         if (!response.ok) {
           const retryAfterMs =
@@ -63,20 +122,9 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
           );
         }
 
-        const results =
-          (await response.json()) as NominatimSearchResult[];
+        const data: unknown = await response.json();
 
-        if (results.length === 0) {
-          return null;
-        }
-
-        const result = results[0];
-
-        return {
-          latitude: Number(result.lat),
-          longitude: Number(result.lon),
-          displayName: result.display_name,
-        };
+        return parseNominatimResult(data);
       } catch (error) {
         const isRetryable = this.isRetryableError(error);
 
@@ -87,7 +135,7 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
 
         const delayTime =
           error instanceof NominatimHttpError &&
-          error.retryAfterMs !== undefined
+            error.retryAfterMs !== undefined
             ? error.retryAfterMs
             : baseDelay * 2 ** attempt;
 
@@ -106,7 +154,7 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
       );
     }
 
-    if (error instanceof TypeError) {
+    if (error instanceof NominatimNetworkError) {
       return true;
     }
 

@@ -1,198 +1,76 @@
 
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+
 import {
   GeocodingProvider,
   GeocodingResult,
 } from '../interfaces/geocoding-provider.interface';
-import { RateLimiter } from '../utils/rate-limiter';
 
-class NominatimHttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly retryAfterMs?: number,
-  ) {
-    super(message);
-    this.name = 'NominatimHttpError';
-  }
-}
+import { HTTP_CLIENT } from '../interfaces/geocoding.tokens';
+import type { HttpClient } from '../interfaces/http-client.interface';
 
-class NominatimNetworkError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NominatimNetworkError';
-  }
-}
+import { GeocodingCacheService } from '../cache/geocoding-cache.service';
 
-function parseNominatimResult(data: unknown): GeocodingResult | null {
-  if (!Array.isArray(data)) {
-    throw new Error('Invalid Nominatim response: expected an array');
-  }
-
-  if (data.length === 0) {
-    return null;
-  }
-
-  const result: unknown = data[0];
-
-  if (typeof result !== 'object' || result === null) {
-    throw new Error(
-      'Invalid Nominatim response: invalid result structure',
-    );
-  }
-
-  const record = result as Record<string, unknown>;
-
-  if (
-    typeof record.lat !== 'string' ||
-    typeof record.lon !== 'string' ||
-    typeof record.display_name !== 'string'
-  ) {
-    throw new Error(
-      'Invalid Nominatim response: invalid result structure',
-    );
-  }
-
-  const latitude = Number(record.lat);
-  const longitude = Number(record.lon);
-
-  if (
-    !Number.isFinite(latitude) ||
-    !Number.isFinite(longitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    longitude < -180 ||
-    longitude > 180
-  ) {
-    throw new Error('Invalid Nominatim response: invalid coordinates');
-  }
-
-  return {
-    latitude,
-    longitude,
-    displayName: record.display_name,
-  };
-}
+import { NominatimResponseParser } from './nominatim-response.parser';
+import { NominatimRetryPolicy } from './nominatim-retry.policy';
+import { GeocodingRetryService } from '../services/geocoding-retry.service';
 
 @Injectable()
 export class NominatimGeocodingProvider implements GeocodingProvider {
-  private readonly rateLimiter = new RateLimiter(1000);
+  constructor(
+    @Inject(HTTP_CLIENT)
+    private readonly httpClient: HttpClient,
+    private readonly responseParser: NominatimResponseParser,
+    private readonly retryService: GeocodingRetryService,
+    private readonly retryPolicy: NominatimRetryPolicy,
+    private readonly cacheService: GeocodingCacheService,
+  ) { }
 
   async geocode(address: string): Promise<GeocodingResult | null> {
-    const maxRetries = 3;
-    const baseDelay = 1000;
+    const normalizedAddress = address.trim();
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const url = new URL(
-          'https://nominatim.openstreetmap.org/search',
-        );
+    if (normalizedAddress.length === 0) {
+      throw new Error('Address must not be empty');
+    }
 
-        url.searchParams.set('q', address);
-        url.searchParams.set('format', 'jsonv2');
-        url.searchParams.set('limit', '1');
+    const cacheKey = normalizedAddress
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
 
-        const response = await this.rateLimiter.execute(async () => {
-          try {
-            return await fetch(url, {
-              headers: {
-                'User-Agent': 'Qaryati/1.0',
-              },
-              signal: AbortSignal.timeout(5000),
-            });
-          } catch (error) {
-            if (error instanceof TypeError) {
-              throw new NominatimNetworkError(error.message);
-            }
+    const cachedResult = this.cacheService.get(cacheKey);
 
-            throw error;
-          }
+    if (cachedResult !== null) {
+      return cachedResult;
+    }
+
+    const url = new URL(
+      'https://nominatim.openstreetmap.org/search',
+    );
+
+    url.searchParams.set('q', normalizedAddress);
+    url.searchParams.set('format', 'jsonv2');
+    url.searchParams.set('limit', '1');
+
+    const result = await this.retryService.execute(
+      async () => {
+        const response = await this.httpClient.get(url, {
+          headers: {
+            'User-Agent': 'Qaryati/1.0',
+          },
+          timeoutMs: 5000,
         });
 
-        if (!response.ok) {
-          const retryAfterMs =
-            response.status === 429
-              ? this.getRetryAfter(response)
-              : undefined;
+        const data = await response.json();
 
-          throw new NominatimHttpError(
-            response.status,
-            `Nominatim request failed: ${response.status}`,
-            retryAfterMs,
-          );
-        }
+        return this.responseParser.parse(data);
+      },
+      this.retryPolicy,
+    );
 
-        const data: unknown = await response.json();
-
-        return parseNominatimResult(data);
-      } catch (error) {
-        const isRetryable = this.isRetryableError(error);
-
-        if (!isRetryable || attempt === maxRetries) {
-          console.error('Geocoding request failed:', error);
-          throw error;
-        }
-
-        const delayTime =
-          error instanceof NominatimHttpError &&
-            error.retryAfterMs !== undefined
-            ? error.retryAfterMs
-            : baseDelay * 2 ** attempt;
-
-        await this.delay(delayTime);
-      }
+    if (result !== null) {
+      this.cacheService.set(cacheKey, result);
     }
 
-    throw new Error('Geocoding failed after all retry attempts');
-  }
-
-  private isRetryableError(error: unknown): boolean {
-    if (error instanceof NominatimHttpError) {
-      return (
-        [500, 502, 503, 504].includes(error.status) ||
-        error.status === 429
-      );
-    }
-
-    if (error instanceof NominatimNetworkError) {
-      return true;
-    }
-
-    if (
-      error instanceof DOMException &&
-      ['TimeoutError', 'AbortError'].includes(error.name)
-    ) {
-      return true;
-    }
-
-    return false;
-  }
-
-  private getRetryAfter(response: Response): number {
-    const retryAfter = response.headers.get('Retry-After');
-
-    if (!retryAfter) {
-      return 1000;
-    }
-
-    const seconds = Number(retryAfter);
-
-    if (Number.isFinite(seconds)) {
-      return Math.max(1000, seconds * 1000);
-    }
-
-    const retryDate = Date.parse(retryAfter);
-
-    if (Number.isNaN(retryDate)) {
-      return 1000;
-    }
-
-    return Math.max(1000, retryDate - Date.now());
-  }
-
-  private delay(milliseconds: number): Promise<void> {
-    return new Promise((resolve) => {
-      setTimeout(resolve, milliseconds);
-    });
+    return result;
   }
 }

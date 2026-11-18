@@ -1,4 +1,3 @@
-
 import { Module } from '@nestjs/common';
 
 import { HTTP_CLIENT } from './interfaces/geocoding.tokens';
@@ -14,17 +13,17 @@ import { NominatimResponseParser } from './providers/nominatim-response.parser';
 import { NominatimRetryPolicy } from './providers/nominatim-retry.policy';
 
 @Module({
-    providers: [
-        {
-            provide: HTTP_CLIENT,
-            useClass: FetchHttpClient,
-        },
-        GeocodingCacheService,
-        NominatimResponseParser,
-        GeocodingRetryService,
-        NominatimRetryPolicy,
-        NominatimGeocodingProvider,
-    ],
-    exports: [NominatimGeocodingProvider],
+  providers: [
+    {
+      provide: HTTP_CLIENT,
+      useClass: FetchHttpClient,
+    },
+    GeocodingCacheService,
+    NominatimResponseParser,
+    GeocodingRetryService,
+    NominatimRetryPolicy,
+    NominatimGeocodingProvider,
+  ],
+  exports: [NominatimGeocodingProvider],
 })
-export class GeocodingModule { }
+export class GeocodingModule {}

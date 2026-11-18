@@ -1,4 +1,3 @@
-
 export class RateLimiter {
   private lastRequestTime = 0;
   private queue: Promise<void> = Promise.resolve();

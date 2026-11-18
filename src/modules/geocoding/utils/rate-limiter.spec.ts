@@ -1,4 +1,3 @@
-
 import { RateLimiter } from './rate-limiter';
 
 describe('RateLimiter', () => {
@@ -21,17 +20,23 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter(0);
     const executionOrder: number[] = [];
 
-    const first = limiter.execute(async () => {
-      executionOrder.push(1);
-    });
+    const first = limiter.execute(() =>
+      Promise.resolve().then(() => {
+        executionOrder.push(1);
+      }),
+    );
 
-    const second = limiter.execute(async () => {
-      executionOrder.push(2);
-    });
+    const second = limiter.execute(() =>
+      Promise.resolve().then(() => {
+        executionOrder.push(2);
+      }),
+    );
 
-    const third = limiter.execute(async () => {
-      executionOrder.push(3);
-    });
+    const third = limiter.execute(() =>
+      Promise.resolve().then(() => {
+        executionOrder.push(3);
+      }),
+    );
 
     await Promise.all([first, second, third]);
 
@@ -42,20 +47,26 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter(0);
     const executionOrder: number[] = [];
 
-    const first = limiter.execute(async () => {
-      executionOrder.push(1);
-      throw new Error('Operation failed');
-    });
+    const first = limiter.execute(() =>
+      Promise.resolve().then(() => {
+        executionOrder.push(1);
+        throw new Error('Operation failed');
+      }),
+    );
 
-    const second = limiter.execute(async () => {
-      executionOrder.push(2);
-      return 'success';
-    });
+    const second = limiter.execute(() =>
+      Promise.resolve().then(() => {
+        executionOrder.push(2);
+        return 'success';
+      }),
+    );
 
-    const third = limiter.execute(async () => {
-      executionOrder.push(3);
-      return 'third success';
-    });
+    const third = limiter.execute(() =>
+      Promise.resolve().then(() => {
+        executionOrder.push(3);
+        return 'third success';
+      }),
+    );
 
     await expect(first).rejects.toThrow('Operation failed');
     await expect(second).resolves.toBe('success');
@@ -72,13 +83,17 @@ describe('RateLimiter', () => {
       const limiter = new RateLimiter(minInterval);
       const startTimes: number[] = [];
 
-      const first = limiter.execute(async () => {
-        startTimes.push(Date.now());
-      });
+      const first = limiter.execute(() =>
+        Promise.resolve().then(() => {
+          startTimes.push(Date.now());
+        }),
+      );
 
-      const second = limiter.execute(async () => {
-        startTimes.push(Date.now());
-      });
+      const second = limiter.execute(() =>
+        Promise.resolve().then(() => {
+          startTimes.push(Date.now());
+        }),
+      );
 
       await jest.advanceTimersByTimeAsync(1000);
 

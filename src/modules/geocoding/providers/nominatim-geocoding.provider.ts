@@ -1,4 +1,3 @@
-
 import { Inject, Injectable } from '@nestjs/common';
 
 import {
@@ -24,7 +23,7 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
     private readonly retryService: GeocodingRetryService,
     private readonly retryPolicy: NominatimRetryPolicy,
     private readonly cacheService: GeocodingCacheService,
-  ) { }
+  ) {}
 
   async geocode(address: string): Promise<GeocodingResult | null> {
     const normalizedAddress = address.trim();
@@ -33,9 +32,7 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
       throw new Error('Address must not be empty');
     }
 
-    const cacheKey = normalizedAddress
-      .replace(/\s+/g, ' ')
-      .toLowerCase();
+    const cacheKey = normalizedAddress.replace(/\s+/g, ' ').toLowerCase();
 
     const cachedResult = this.cacheService.get(cacheKey);
 
@@ -43,29 +40,24 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
       return cachedResult;
     }
 
-    const url = new URL(
-      'https://nominatim.openstreetmap.org/search',
-    );
+    const url = new URL('https://nominatim.openstreetmap.org/search');
 
     url.searchParams.set('q', normalizedAddress);
     url.searchParams.set('format', 'jsonv2');
     url.searchParams.set('limit', '1');
 
-    const result = await this.retryService.execute(
-      async () => {
-        const response = await this.httpClient.get(url, {
-          headers: {
-            'User-Agent': 'Qaryati/1.0',
-          },
-          timeoutMs: 5000,
-        });
+    const result = await this.retryService.execute(async () => {
+      const response = await this.httpClient.get(url, {
+        headers: {
+          'User-Agent': 'Qaryati/1.0',
+        },
+        timeoutMs: 5000,
+      });
 
-        const data = await response.json();
+      const data = await response.json();
 
-        return this.responseParser.parse(data);
-      },
-      this.retryPolicy,
-    );
+      return this.responseParser.parse(data);
+    }, this.retryPolicy);
 
     if (result !== null) {
       this.cacheService.set(cacheKey, result);

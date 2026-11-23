@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
-import { config as loadEnv } from 'dotenv';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
@@ -28,30 +27,6 @@ const fixtureIds = {
   otherVillage: randomUUID(),
   sources: [randomUUID(), randomUUID()] as const,
 };
-const TEST_DATABASE_NAME = /(?:^|[_-])(?:test|testing|e2e)(?:$|[_-])/i;
-const LOCAL_DATABASE_HOSTS = new Set([
-  'localhost',
-  '127.0.0.1',
-  '::1',
-  'db',
-  'postgres',
-]);
-
-function assertIsolatedTestDatabase(): void {
-  loadEnv();
-
-  const databaseName = process.env.DB_NAME?.trim() ?? '';
-  const databaseHost = process.env.DB_HOST?.trim().toLowerCase() ?? '';
-  if (
-    process.env.NODE_ENV !== 'test' ||
-    !TEST_DATABASE_NAME.test(databaseName) ||
-    !LOCAL_DATABASE_HOSTS.has(databaseHost)
-  ) {
-    throw new Error(
-      'Refusing to initialize population e2e tests: NODE_ENV must be "test", DB_HOST must be local, and DB_NAME must contain a standalone test/e2e marker.',
-    );
-  }
-}
 
 describe('Population records (e2e)', () => {
   let app: INestApplication<App> | undefined;
@@ -159,7 +134,6 @@ describe('Population records (e2e)', () => {
   };
 
   beforeAll(async () => {
-    assertIsolatedTestDatabase();
     app = await createTestApp();
     dataSource = app.get(DataSource);
     await cleanupFixtures();

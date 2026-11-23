@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SourceModule } from '../source/source.module';
+import { SourceModule } from '../source';
 import { VillageModule } from '../village/village.module';
 import { PopulationRecord } from './entities/population-record.entity';
 import { PopulationController } from './population.controller';

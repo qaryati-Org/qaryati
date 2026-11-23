@@ -7,8 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { ValidationException } from '../../common/errors/validation.exception';
-import { SourceService } from '../source/source.service';
-import { VerificationStatus } from '../source';
+import { SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
 import {

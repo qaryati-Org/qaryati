@@ -10,6 +10,7 @@ import { GovernorateController } from './governorate.controller';
 import { MunicipalityController } from './municipality.controller';
 import { VillageNameController } from './village-name.controller';
 import { VillageNameService } from './village-name.service';
+import { VillageSearchService } from './village-search.service';
 import { VillageController } from './village.controller';
 import { VillageService } from './village.service';
 
@@ -28,6 +29,7 @@ import { VillageService } from './village.service';
   providers: [
     VillageService,
     VillageNameService,
+    VillageSearchService,
     AdministrativeDivisionService,
   ],
   // Exported so other modules can check that a village exists.

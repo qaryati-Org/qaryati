@@ -80,6 +80,15 @@ src/
 - Send `x-correlation-id` to trace a request; it is echoed in the response,
   the logs, and error bodies.
 
+## Population data rules
+
+- A population value of `0` is valid and represents a documented depopulated
+  village; negative values are invalid.
+- Population records retain the reviewer through `reviewed_by_id`, which
+  restricts deleting a referenced user. Deactivate reviewers with
+  `is_active = false` instead of deleting their accounts, so the review
+  history remains attributable.
+
 ## Team
 
 | Member | Area |

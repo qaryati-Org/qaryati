@@ -31,6 +31,7 @@ npm run start:dev
 npm test            # unit tests
 npm run test:e2e    # e2e tests (needs `docker compose up -d db`)
 npm run lint:check
+npm run typecheck   # type-checks src and test, including *.spec.ts
 ```
 
 ### Migrations

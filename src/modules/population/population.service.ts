@@ -305,7 +305,9 @@ export class PopulationService {
     assertTransition(record.status, targetStatus);
 
     try {
-      const updatedRecords = await this.dataSource.query<PopulationRecord[]>(
+      const [updatedRecords, affectedRowCount] = await this.dataSource.query<
+        [PopulationRecord[], number]
+      >(
         `UPDATE population_records
          SET status = $1,
              reviewed_at = $2,
@@ -337,7 +339,7 @@ export class PopulationService {
           record.status,
         ],
       );
-      if (updatedRecords.length !== 1) {
+      if (affectedRowCount !== 1 || updatedRecords.length !== 1) {
         throw new ConflictException(
           'Population record status changed during review',
         );

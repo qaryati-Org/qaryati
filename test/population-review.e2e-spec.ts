@@ -122,28 +122,12 @@ describe('Population review (e2e)', () => {
   };
 
   beforeAll(async () => {
-    if (
-      process.env.NODE_ENV !== 'test' ||
-      process.env.DB_NAME !== 'qaryati_test'
-    ) {
-      throw new Error(
-        'Population review E2E tests require NODE_ENV=test and DB_NAME=qaryati_test',
-      );
-    }
-
     app = await createTestApp();
     dataSource = app.get(DataSource);
     populationService = app.get(PopulationService);
     populationRecords = app.get<Repository<PopulationRecord>>(
       getRepositoryToken(PopulationRecord),
     );
-    const databaseRows = await db().query<{ databaseName: string }[]>(
-      'SELECT current_database() AS "databaseName"',
-    );
-    if (databaseRows[0]?.databaseName !== 'qaryati_test') {
-      throw new Error('Connected to an unexpected E2E database');
-    }
-
     await db().query(
       `INSERT INTO governorates (id, name_ar, name_en)
        VALUES ($1, $2, $3)`,

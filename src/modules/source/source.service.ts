@@ -5,7 +5,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { escapeLike } from '../../common/database/escape-like';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { CreateSourceDto } from './dto/create-source.dto';
@@ -60,6 +60,22 @@ export class SourceService {
   async findOne(id: string): Promise<SourceResponseDto> {
     const source = await this.getOrFail(id);
     return SourceResponseDto.from(source);
+  }
+
+  async findByIds(ids: string[]): Promise<SourceResponseDto[]> {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const sources = await this.sources.findBy({ id: In(uniqueIds) });
+    const sourcesById = new Map(
+      sources.map((source) => [source.id, SourceResponseDto.from(source)]),
+    );
+    return uniqueIds.flatMap((id) => {
+      const source = sourcesById.get(id);
+      return source ? [source] : [];
+    });
   }
 
   // For other modules validating a sourceId in a request body. The source is not the resource in the URL, so an unknown id is a 422, not a 404: a 404 would look as if the main resource (e.g. the village) did not exist.

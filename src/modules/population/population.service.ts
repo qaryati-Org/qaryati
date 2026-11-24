@@ -149,6 +149,9 @@ export class PopulationService {
         'Population history query returned no result',
       );
     }
+    if (result.rows.length === 0) {
+      return paginate([], Number(result.total), query);
+    }
 
     const sources = await this.sources.findByIds([
       ...new Set(result.rows.map((row) => row.sourceId)),

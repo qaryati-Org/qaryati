@@ -1,18 +1,25 @@
 import {
   ConflictException,
+  InternalServerErrorException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ValidationException } from '../../common/errors/validation.exception';
 import { SourceService } from '../source/source.service';
-import { VerificationStatus } from '../source';
+import { canTransition, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
+import { PopulationHistorySqlRow } from './dto/population-history-response.dto';
 import { PopulationRecordQueryDto } from './dto/population-record-query.dto';
 import { UpdatePopulationRecordDto } from './dto/update-population-record.dto';
 import { PopulationRecord } from './entities/population-record.entity';
-import { PopulationService } from './population.service';
+import {
+  POPULATION_HISTORY_SQL,
+  PopulationReviewerContext,
+  PopulationService,
+} from './population.service';
 
 const VILLAGE_ID = '00000000-0000-4000-8000-000000000001';
 const OTHER_VILLAGE_ID = '00000000-0000-4000-8000-000000000002';
@@ -56,6 +63,34 @@ const queryDto = (
 ): PopulationRecordQueryDto =>
   Object.assign(new PopulationRecordQueryDto(), overrides);
 
+const historyQueryDto = (
+  overrides: Partial<PopulationHistoryQueryDto> = {},
+): PopulationHistoryQueryDto =>
+  Object.assign(new PopulationHistoryQueryDto(), overrides);
+
+const historyRow = (
+  overrides: Partial<PopulationHistorySqlRow> = {},
+): PopulationHistorySqlRow => ({
+  id: RECORD_ID,
+  villageId: VILLAGE_ID,
+  sourceId: SOURCE_ID,
+  referenceYear: 1997,
+  value: 1200,
+  previousReferenceYear: null,
+  previousValue: null,
+  populationChange: null,
+  ...overrides,
+});
+
+const historySource = (id: string, title: string) => ({
+  id,
+  title,
+  type: 'BOOK',
+  author: 'Historical Office',
+  url: `https://example.test/${id}`,
+  year: 1996,
+});
+
 function pgError(code: string, constraint?: string): Error {
   const error = Object.assign(new Error(`database error ${code}`), { code });
   return constraint === undefined
@@ -90,7 +125,8 @@ describe('PopulationService', () => {
     getManyAndCount: jest.Mock;
   };
   let villages: { findOne: jest.Mock };
-  let sources: { ensureExists: jest.Mock };
+  let sources: { ensureExists: jest.Mock; findByIds: jest.Mock };
+  let dataSource: { query: jest.Mock };
   let service: PopulationService;
 
   beforeEach(() => {
@@ -124,12 +160,19 @@ describe('PopulationService', () => {
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     };
     villages = { findOne: jest.fn().mockResolvedValue({ id: VILLAGE_ID }) };
-    sources = { ensureExists: jest.fn().mockResolvedValue(undefined) };
+    sources = {
+      ensureExists: jest.fn().mockResolvedValue(undefined),
+      findByIds: jest.fn().mockResolvedValue([]),
+    };
+    dataSource = {
+      query: jest.fn().mockResolvedValue([{ total: 0, rows: [] }]),
+    };
 
     service = new PopulationService(
       repository as unknown as Repository<PopulationRecord>,
       villages as unknown as VillageService,
       sources as unknown as SourceService,
+      dataSource as unknown as DataSource,
     );
   });
 
@@ -373,6 +416,540 @@ describe('PopulationService', () => {
         id: RECORD_ID,
         villageId: VILLAGE_ID,
       });
+    });
+  });
+
+  describe('history', () => {
+    it('checks that the village exists before executing the SQL query', async () => {
+      dataSource.query.mockResolvedValueOnce([{ total: 0, rows: [] }]);
+
+      await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(villages.findOne.mock.invocationCallOrder[0]).toBeLessThan(
+        dataSource.query.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('propagates an unknown village error without executing SQL', async () => {
+      const error = new NotFoundException('Village not found');
+      villages.findOne.mockRejectedValueOnce(error);
+
+      await expect(service.history(VILLAGE_ID, historyQueryDto())).rejects.toBe(
+        error,
+      );
+      expect(dataSource.query).not.toHaveBeenCalled();
+    });
+
+    it('executes the native SQL with parameterized village and pagination values', async () => {
+      dataSource.query.mockResolvedValueOnce([{ total: 0, rows: [] }]);
+      const query = historyQueryDto({ page: 3, limit: 5 });
+
+      await service.history(VILLAGE_ID, query);
+
+      expect(dataSource.query).toHaveBeenCalledWith(POPULATION_HISTORY_SQL, [
+        VILLAGE_ID,
+        5,
+        10,
+      ]);
+    });
+
+    it('uses LAG over verified records before applying outer pagination', async () => {
+      dataSource.query.mockResolvedValueOnce([{ total: 0, rows: [] }]);
+
+      await service.history(VILLAGE_ID, historyQueryDto());
+
+      const sql = dataSource.query.mock.calls[0][0] as string;
+      const verifiedFilter = sql.indexOf("AND status = 'VERIFIED'");
+      const windowDefinition = sql.indexOf('WINDOW history AS');
+      const pagination = sql.indexOf('LIMIT $2 OFFSET $3');
+      expect(sql).toContain('LAG(reference_year)');
+      expect(sql).toContain('LAG(value)');
+      expect(verifiedFilter).toBeGreaterThan(-1);
+      expect(verifiedFilter).toBeLessThan(windowDefinition);
+      expect(windowDefinition).toBeLessThan(pagination);
+    });
+
+    it('maps query results to response DTOs with their matching sources', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        {
+          total: 1,
+          rows: [
+            historyRow({
+              referenceYear: 2007,
+              value: 1500,
+              previousReferenceYear: 1997,
+              previousValue: 1200,
+              populationChange: 300,
+            }),
+          ],
+        },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([
+        historySource(SOURCE_ID, '1997 Census'),
+      ]);
+
+      const result = await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(result.data).toEqual([
+        {
+          id: RECORD_ID,
+          villageId: VILLAGE_ID,
+          referenceYear: 2007,
+          value: 1500,
+          previousReferenceYear: 1997,
+          previousValue: 1200,
+          populationChange: 300,
+          source: {
+            id: SOURCE_ID,
+            title: '1997 Census',
+            type: 'BOOK',
+            author: 'Historical Office',
+            url: `https://example.test/${SOURCE_ID}`,
+            year: 1996,
+          },
+        },
+      ]);
+    });
+
+    it('converts PostgreSQL numeric strings to numbers', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        {
+          total: '1',
+          rows: [
+            historyRow({
+              referenceYear: '2007',
+              value: '1500',
+              previousReferenceYear: '1997',
+              previousValue: '1200',
+              populationChange: '300',
+            }),
+          ],
+        },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([
+        historySource(SOURCE_ID, 'Census'),
+      ]);
+
+      const result = await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(result.data[0]).toMatchObject({
+        referenceYear: 2007,
+        value: 1500,
+        previousReferenceYear: 1997,
+        previousValue: 1200,
+        populationChange: 300,
+      });
+      expect(result.meta.total).toBe(1);
+    });
+
+    it('preserves null previous-year, previous-value, and change fields', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        { total: 1, rows: [historyRow()] },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([
+        historySource(SOURCE_ID, 'Census'),
+      ]);
+
+      const result = await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(result.data[0]).toMatchObject({
+        previousReferenceYear: null,
+        previousValue: null,
+        populationChange: null,
+      });
+    });
+
+    it('fetches multiple source IDs in one bulk lookup', async () => {
+      const secondSourceId = OTHER_SOURCE_ID;
+      dataSource.query.mockResolvedValueOnce([
+        {
+          total: 2,
+          rows: [
+            historyRow({ id: RECORD_ID, sourceId: SOURCE_ID }),
+            historyRow({
+              id: REVIEWER_ID,
+              sourceId: secondSourceId,
+              referenceYear: 2007,
+            }),
+          ],
+        },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([
+        historySource(SOURCE_ID, 'First source'),
+        historySource(secondSourceId, 'Second source'),
+      ]);
+
+      await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(sources.findByIds).toHaveBeenCalledTimes(1);
+      expect(sources.findByIds).toHaveBeenCalledWith([
+        SOURCE_ID,
+        secondSourceId,
+      ]);
+    });
+
+    it('deduplicates source IDs before the bulk lookup', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        {
+          total: 2,
+          rows: [
+            historyRow({ id: RECORD_ID, sourceId: SOURCE_ID }),
+            historyRow({
+              id: REVIEWER_ID,
+              sourceId: SOURCE_ID,
+              referenceYear: 2007,
+            }),
+          ],
+        },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([
+        historySource(SOURCE_ID, 'Shared source'),
+      ]);
+
+      const result = await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(sources.findByIds).toHaveBeenCalledWith([SOURCE_ID]);
+      expect(result.data.map((item) => item.source.title)).toEqual([
+        'Shared source',
+        'Shared source',
+      ]);
+    });
+
+    it('associates each observation with the source matching its source ID', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        {
+          total: 2,
+          rows: [
+            historyRow({ id: RECORD_ID, sourceId: SOURCE_ID }),
+            historyRow({
+              id: REVIEWER_ID,
+              sourceId: OTHER_SOURCE_ID,
+              referenceYear: 2007,
+            }),
+          ],
+        },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([
+        historySource(OTHER_SOURCE_ID, 'Second source'),
+        historySource(SOURCE_ID, 'First source'),
+      ]);
+
+      const result = await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(result.data.map((item) => item.source.title)).toEqual([
+        'First source',
+        'Second source',
+      ]);
+    });
+
+    it('returns an empty history without looking up sources', async () => {
+      dataSource.query.mockResolvedValueOnce([{ total: 0, rows: [] }]);
+
+      const result = await service.history(VILLAGE_ID, historyQueryDto());
+
+      expect(result).toEqual({
+        data: [],
+        meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
+      });
+      expect(sources.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('preserves total and pagination metadata for an empty page', async () => {
+      dataSource.query.mockResolvedValueOnce([{ total: 7, rows: [] }]);
+
+      const result = await service.history(
+        VILLAGE_ID,
+        historyQueryDto({ page: 4, limit: 2 }),
+      );
+
+      expect(result).toEqual({
+        data: [],
+        meta: { page: 4, limit: 2, total: 7, totalPages: 4 },
+      });
+    });
+
+    it('throws a server error when a returned observation has no source', async () => {
+      dataSource.query.mockResolvedValueOnce([
+        { total: 1, rows: [historyRow()] },
+      ]);
+      sources.findByIds.mockResolvedValueOnce([]);
+
+      await expect(
+        service.history(VILLAGE_ID, historyQueryDto()),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+
+    it('propagates database query failures', async () => {
+      const error = new Error('database unavailable');
+      dataSource.query.mockRejectedValueOnce(error);
+
+      await expect(service.history(VILLAGE_ID, historyQueryDto())).rejects.toBe(
+        error,
+      );
+    });
+  });
+
+  describe('verification and rejection', () => {
+    const reviewer: PopulationReviewerContext = { reviewerId: REVIEWER_ID };
+    const updateResult = (record?: PopulationRecord) => [
+      record ? [record] : [],
+      record ? 1 : 0,
+    ];
+
+    it('transitions PENDING to VERIFIED and maps the updated response', async () => {
+      const reviewedAt = new Date('2026-03-01T12:00:00.000Z');
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      dataSource.query.mockResolvedValueOnce(
+        updateResult(
+          populationRecord({
+            status: VerificationStatus.VERIFIED,
+            reviewedAt,
+            reviewedById: REVIEWER_ID,
+            reviewNote: 'Evidence confirmed',
+          }),
+        ),
+      );
+
+      const result = await service.verify(VILLAGE_ID, RECORD_ID, reviewer, {
+        reviewNote: 'Evidence confirmed',
+      });
+
+      expect(
+        canTransition(VerificationStatus.PENDING, VerificationStatus.VERIFIED),
+      ).toBe(true);
+      expect(result).toEqual({
+        id: RECORD_ID,
+        villageId: VILLAGE_ID,
+        sourceId: SOURCE_ID,
+        value: 1200,
+        referenceYear: 1997,
+        status: VerificationStatus.VERIFIED,
+        reviewedAt,
+        reviewedById: REVIEWER_ID,
+        reviewNote: 'Evidence confirmed',
+        createdAt,
+        updatedAt,
+      });
+    });
+
+    it('transitions PENDING to REJECTED', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      dataSource.query.mockResolvedValueOnce(
+        updateResult(
+          populationRecord({
+            status: VerificationStatus.REJECTED,
+            reviewedAt: updatedAt,
+            reviewedById: REVIEWER_ID,
+            reviewNote: 'Conflicting source',
+          }),
+        ),
+      );
+
+      const result = await service.reject(VILLAGE_ID, RECORD_ID, reviewer, {
+        reviewNote: 'Conflicting source',
+      });
+
+      expect(
+        canTransition(VerificationStatus.PENDING, VerificationStatus.REJECTED),
+      ).toBe(true);
+      expect(result.status).toBe(VerificationStatus.REJECTED);
+      expect(result.reviewedById).toBe(REVIEWER_ID);
+      expect(result.reviewNote).toBe('Conflicting source');
+    });
+
+    it('transitions VERIFIED to REJECTED', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        populationRecord({ status: VerificationStatus.VERIFIED }),
+      );
+      dataSource.query.mockResolvedValueOnce(
+        updateResult(
+          populationRecord({
+            status: VerificationStatus.REJECTED,
+            reviewedAt: updatedAt,
+            reviewedById: REVIEWER_ID,
+            reviewNote: 'Verification was incorrect',
+          }),
+        ),
+      );
+
+      const result = await service.reject(VILLAGE_ID, RECORD_ID, reviewer, {
+        reviewNote: 'Verification was incorrect',
+      });
+
+      expect(
+        canTransition(VerificationStatus.VERIFIED, VerificationStatus.REJECTED),
+      ).toBe(true);
+      expect(result.status).toBe(VerificationStatus.REJECTED);
+    });
+
+    it.each([
+      [VerificationStatus.REJECTED, 'verify', VerificationStatus.VERIFIED],
+      [VerificationStatus.REJECTED, 'reject', VerificationStatus.REJECTED],
+      [VerificationStatus.VERIFIED, 'verify', VerificationStatus.VERIFIED],
+    ] as const)(
+      'rejects the disallowed %s to %s transition with 409',
+      async (initialStatus, action, targetStatus) => {
+        repository.findOneBy.mockResolvedValueOnce(
+          populationRecord({ status: initialStatus }),
+        );
+        const transition = canTransition(initialStatus, targetStatus);
+        const operation =
+          action === 'verify'
+            ? service.verify(VILLAGE_ID, RECORD_ID, reviewer, {})
+            : service.reject(VILLAGE_ID, RECORD_ID, reviewer, {
+                reviewNote: 'Rejected again',
+              });
+
+        expect(transition).toBe(false);
+        await expect(operation).rejects.toBeInstanceOf(ConflictException);
+        expect(dataSource.query).not.toHaveBeenCalled();
+      },
+    );
+
+    it('returns 404 for an unknown population record', async () => {
+      const error = await captureError(() =>
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {}),
+      );
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: RECORD_ID,
+        villageId: VILLAGE_ID,
+      });
+      expect(dataSource.query).not.toHaveBeenCalled();
+    });
+
+    it('scopes missing-record lookup to the requested village', async () => {
+      const error = await captureError(() =>
+        service.verify(OTHER_VILLAGE_ID, RECORD_ID, reviewer, {}),
+      );
+
+      expect(error).toBeInstanceOf(NotFoundException);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: RECORD_ID,
+        villageId: OTHER_VILLAGE_ID,
+      });
+      expect(dataSource.query).not.toHaveBeenCalled();
+    });
+
+    it('compares record ID, village ID, and expected status in the atomic update', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      dataSource.query.mockResolvedValueOnce(
+        updateResult(populationRecord({ status: VerificationStatus.VERIFIED })),
+      );
+
+      await expect(
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {}),
+      ).resolves.toMatchObject({
+        status: VerificationStatus.VERIFIED,
+      });
+
+      const [sql, parameters] = dataSource.query.mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      expect(sql).toMatch(
+        /WHERE id = \$5\s+AND village_id = \$6\s+AND status = \$7/,
+      );
+      expect(parameters.slice(4)).toEqual([
+        RECORD_ID,
+        VILLAGE_ID,
+        VerificationStatus.PENDING,
+      ]);
+    });
+
+    it('updates status and all review metadata together', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      dataSource.query.mockResolvedValueOnce(
+        updateResult(
+          populationRecord({
+            status: VerificationStatus.VERIFIED,
+            reviewedAt: updatedAt,
+            reviewedById: REVIEWER_ID,
+            reviewNote: 'Reviewed',
+          }),
+        ),
+      );
+
+      await expect(
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {
+          reviewNote: 'Reviewed',
+        }),
+      ).resolves.toMatchObject({
+        status: VerificationStatus.VERIFIED,
+        reviewedById: REVIEWER_ID,
+        reviewNote: 'Reviewed',
+      });
+
+      const [sql, parameters] = dataSource.query.mock.calls[0] as [
+        string,
+        unknown[],
+      ];
+      expect(sql).toMatch(
+        /SET status = \$1,\s*reviewed_at = \$2,\s*reviewed_by_id = \$3,\s*review_note = \$4/,
+      );
+      expect(parameters.slice(0, 4)).toEqual([
+        VerificationStatus.VERIFIED,
+        expect.any(Date),
+        REVIEWER_ID,
+        'Reviewed',
+      ]);
+    });
+
+    it('returns 409 when the compare-and-swap update affects no rows', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      dataSource.query.mockResolvedValueOnce(updateResult());
+
+      await expect(
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {}),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('maps the verified-per-year unique violation to 409', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      const error = new QueryFailedError(
+        'UPDATE population_records',
+        [],
+        pgError('23505', 'uq_population_records_verified_village_year'),
+      );
+      dataSource.query.mockRejectedValueOnce(error);
+
+      await expect(
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {}),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('propagates unrelated database errors without converting them to conflicts', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      const error = new QueryFailedError(
+        'UPDATE population_records',
+        [],
+        pgError('23505', 'uq_another_constraint'),
+      );
+      dataSource.query.mockRejectedValueOnce(error);
+
+      await expect(
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {}),
+      ).rejects.toBe(error);
+    });
+
+    it('does not update population value, source, or reference year', async () => {
+      repository.findOneBy.mockResolvedValueOnce(populationRecord());
+      dataSource.query.mockResolvedValueOnce(
+        updateResult(populationRecord({ status: VerificationStatus.VERIFIED })),
+      );
+
+      await expect(
+        service.verify(VILLAGE_ID, RECORD_ID, reviewer, {}),
+      ).resolves.toMatchObject({
+        status: VerificationStatus.VERIFIED,
+      });
+
+      const [sql] = dataSource.query.mock.calls[0] as [string, unknown[]];
+      const setClause = sql.split('WHERE')[0];
+      expect(setClause).not.toMatch(/\bvalue\s*=/);
+      expect(setClause).not.toMatch(/\bsource_id\s*=/);
+      expect(setClause).not.toMatch(/\breference_year\s*=/);
     });
   });
 

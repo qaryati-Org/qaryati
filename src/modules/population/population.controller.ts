@@ -10,27 +10,42 @@ import {
   Patch,
   Post,
   Query,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiExtraModels,
+  ApiForbiddenResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Paginated } from '../../common/pagination/paginated';
 import { Role, Roles } from '../auth';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
+import {
+  PopulationHistoryResponseDto,
+  PopulationHistorySourceDto,
+} from './dto/population-history-response.dto';
 import { PopulationRecordQueryDto } from './dto/population-record-query.dto';
 import { PopulationRecordResponseDto } from './dto/population-record-response.dto';
+import { RejectPopulationRecordDto } from './dto/reject-population-record.dto';
 import { UpdatePopulationRecordDto } from './dto/update-population-record.dto';
+import { VerifyPopulationRecordDto } from './dto/verify-population-record.dto';
+import {
+  POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
+  PopulationReviewAuthenticationGuard,
+} from './population-review-auth.guard';
 import { PopulationService } from './population.service';
 
 // @Roles metadata is not enforced while the global RolesGuard allows all requests.
@@ -157,5 +172,123 @@ export class PopulationController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<void> {
     return this.populationService.remove(villageId, id);
+  }
+
+  @Post(':id/verify')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.VERIFIER, Role.ADMIN)
+  @UseGuards(PopulationReviewAuthenticationGuard)
+  @ApiOperation({
+    summary: 'Verify a population record',
+    description:
+      'Disabled until trusted authentication and role enforcement are integrated.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
+  @ApiOkResponse({ type: PopulationRecordResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid IDs or review note' })
+  @ApiUnauthorizedResponse({
+    description: 'Authenticated reviewer identity is not configured',
+  })
+  @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
+  @ApiNotFoundResponse({ description: 'Population record not found' })
+  @ApiConflictResponse({
+    description: 'The record cannot transition to VERIFIED',
+  })
+  verify(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: VerifyPopulationRecordDto,
+  ): Promise<PopulationRecordResponseDto> {
+    void villageId;
+    void id;
+    void dto;
+    throw new UnauthorizedException(POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+  }
+
+  @Post(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.VERIFIER, Role.ADMIN)
+  @UseGuards(PopulationReviewAuthenticationGuard)
+  @ApiOperation({
+    summary: 'Reject a population record',
+    description:
+      'Disabled until trusted authentication and role enforcement are integrated.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
+  @ApiOkResponse({ type: PopulationRecordResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid IDs or rejection note' })
+  @ApiUnauthorizedResponse({
+    description: 'Authenticated reviewer identity is not configured',
+  })
+  @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
+  @ApiNotFoundResponse({ description: 'Population record not found' })
+  @ApiConflictResponse({
+    description: 'The record cannot transition to REJECTED',
+  })
+  reject(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: RejectPopulationRecordDto,
+  ): Promise<PopulationRecordResponseDto> {
+    void villageId;
+    void id;
+    void dto;
+    throw new UnauthorizedException(POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+  }
+}
+
+@ApiTags('population')
+@Controller('villages/:villageId')
+export class PopulationHistoryController {
+  constructor(private readonly populationService: PopulationService) {}
+
+  @Get('population-history')
+  @ApiOperation({
+    summary: 'Get verified population history for a village',
+    description:
+      'Returns verified observations from oldest to newest; years without verified data are omitted.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiExtraModels(PopulationHistoryResponseDto, PopulationHistorySourceDto)
+  @ApiOkResponse({
+    description: 'Paginated verified population history returned',
+    schema: {
+      type: 'object',
+      required: ['data', 'meta'],
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(PopulationHistoryResponseDto) },
+        },
+        meta: {
+          type: 'object',
+          required: ['page', 'limit', 'total', 'totalPages'],
+          properties: {
+            page: { type: 'integer', description: 'Current page number' },
+            limit: { type: 'integer', description: 'Records per page' },
+            total: {
+              type: 'integer',
+              description: 'Total verified observations',
+            },
+            totalPages: {
+              type: 'integer',
+              description: 'Total number of pages',
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid village ID or pagination parameters',
+  })
+  @ApiNotFoundResponse({ description: 'Village not found' })
+  history(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Query() query: PopulationHistoryQueryDto,
+  ): Promise<Paginated<PopulationHistoryResponseDto>> {
+    return this.populationService.history(villageId, query);
   }
 }

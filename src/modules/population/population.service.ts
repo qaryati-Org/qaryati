@@ -6,9 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
+import { isUniqueViolation } from '../../common/database/pg-errors';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { ValidationException } from '../../common/errors/validation.exception';
-import { SourceService, VerificationStatus } from '../source';
+import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
 import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
@@ -21,12 +22,16 @@ import {
   PopulationSortField,
 } from './dto/population-record-query.dto';
 import { PopulationRecordResponseDto } from './dto/population-record-response.dto';
+import { RejectPopulationRecordDto } from './dto/reject-population-record.dto';
 import { UpdatePopulationRecordDto } from './dto/update-population-record.dto';
+import { VerifyPopulationRecordDto } from './dto/verify-population-record.dto';
 import { PopulationRecord } from './entities/population-record.entity';
 
 const PG_UNIQUE_VIOLATION = '23505';
 const DUPLICATE_POPULATION_RECORD_CONSTRAINT =
   'uq_population_records_village_year_value_source';
+const VERIFIED_POPULATION_CONSTRAINT =
+  'uq_population_records_verified_village_year';
 const POPULATION_SORT_COLUMNS: Record<PopulationSortField, string> = {
   referenceYear: 'record.referenceYear',
   value: 'record.value',
@@ -83,6 +88,10 @@ SELECT
     ),
     '[]'::json
   ) AS rows`;
+
+export interface PopulationReviewerContext {
+  readonly reviewerId: string;
+}
 
 @Injectable()
 export class PopulationService {
@@ -239,6 +248,36 @@ export class PopulationService {
     await this.populationRecords.remove(record);
   }
 
+  verify(
+    villageId: string,
+    recordId: string,
+    reviewer: PopulationReviewerContext,
+    dto: VerifyPopulationRecordDto,
+  ): Promise<PopulationRecordResponseDto> {
+    return this.review(
+      villageId,
+      recordId,
+      reviewer,
+      VerificationStatus.VERIFIED,
+      dto.reviewNote ?? null,
+    );
+  }
+
+  reject(
+    villageId: string,
+    recordId: string,
+    reviewer: PopulationReviewerContext,
+    dto: RejectPopulationRecordDto,
+  ): Promise<PopulationRecordResponseDto> {
+    return this.review(
+      villageId,
+      recordId,
+      reviewer,
+      VerificationStatus.REJECTED,
+      dto.reviewNote,
+    );
+  }
+
   private async getOrFail(
     villageId: string,
     recordId: string,
@@ -253,6 +292,65 @@ export class PopulationService {
       );
     }
     return record;
+  }
+
+  private async review(
+    villageId: string,
+    recordId: string,
+    reviewer: PopulationReviewerContext,
+    targetStatus: VerificationStatus,
+    reviewNote: string | null,
+  ): Promise<PopulationRecordResponseDto> {
+    const record = await this.getOrFail(villageId, recordId);
+    assertTransition(record.status, targetStatus);
+
+    try {
+      const updatedRecords = await this.dataSource.query<PopulationRecord[]>(
+        `UPDATE population_records
+         SET status = $1,
+             reviewed_at = $2,
+             reviewed_by_id = $3,
+             review_note = $4,
+             updated_at = now()
+         WHERE id = $5
+           AND village_id = $6
+           AND status = $7
+         RETURNING
+           id,
+           village_id AS "villageId",
+           source_id AS "sourceId",
+           value,
+           reference_year AS "referenceYear",
+           status,
+           reviewed_at AS "reviewedAt",
+           reviewed_by_id AS "reviewedById",
+           review_note AS "reviewNote",
+           created_at AS "createdAt",
+           updated_at AS "updatedAt"`,
+        [
+          targetStatus,
+          new Date(),
+          reviewer.reviewerId,
+          reviewNote,
+          recordId,
+          villageId,
+          record.status,
+        ],
+      );
+      if (updatedRecords.length !== 1) {
+        throw new ConflictException(
+          'Population record status changed during review',
+        );
+      }
+      return PopulationRecordResponseDto.from(updatedRecords[0]);
+    } catch (error) {
+      if (isUniqueViolation(error, VERIFIED_POPULATION_CONSTRAINT)) {
+        throw new ConflictException(
+          'A verified population record already exists for this village and year',
+        );
+      }
+      throw error;
+    }
   }
 
   private assertYearNotInFuture(year?: number): void {

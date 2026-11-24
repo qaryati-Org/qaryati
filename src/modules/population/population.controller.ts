@@ -10,18 +10,22 @@ import {
   Patch,
   Post,
   Query,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiExtraModels,
+  ApiForbiddenResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiParam,
   ApiTags,
+  ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
   getSchemaPath,
 } from '@nestjs/swagger';
@@ -35,7 +39,13 @@ import {
 } from './dto/population-history-response.dto';
 import { PopulationRecordQueryDto } from './dto/population-record-query.dto';
 import { PopulationRecordResponseDto } from './dto/population-record-response.dto';
+import { RejectPopulationRecordDto } from './dto/reject-population-record.dto';
 import { UpdatePopulationRecordDto } from './dto/update-population-record.dto';
+import { VerifyPopulationRecordDto } from './dto/verify-population-record.dto';
+import {
+  POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
+  PopulationReviewAuthenticationGuard,
+} from './population-review-auth.guard';
 import { PopulationService } from './population.service';
 
 // @Roles metadata is not enforced while the global RolesGuard allows all requests.
@@ -162,6 +172,70 @@ export class PopulationController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<void> {
     return this.populationService.remove(villageId, id);
+  }
+
+  @Post(':id/verify')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.VERIFIER, Role.ADMIN)
+  @UseGuards(PopulationReviewAuthenticationGuard)
+  @ApiOperation({
+    summary: 'Verify a population record',
+    description:
+      'Disabled until trusted authentication and role enforcement are integrated.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
+  @ApiOkResponse({ type: PopulationRecordResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid IDs or review note' })
+  @ApiUnauthorizedResponse({
+    description: 'Authenticated reviewer identity is not configured',
+  })
+  @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
+  @ApiNotFoundResponse({ description: 'Population record not found' })
+  @ApiConflictResponse({
+    description: 'The record cannot transition to VERIFIED',
+  })
+  verify(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: VerifyPopulationRecordDto,
+  ): Promise<PopulationRecordResponseDto> {
+    void villageId;
+    void id;
+    void dto;
+    throw new UnauthorizedException(POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+  }
+
+  @Post(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  @Roles(Role.VERIFIER, Role.ADMIN)
+  @UseGuards(PopulationReviewAuthenticationGuard)
+  @ApiOperation({
+    summary: 'Reject a population record',
+    description:
+      'Disabled until trusted authentication and role enforcement are integrated.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
+  @ApiOkResponse({ type: PopulationRecordResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid IDs or rejection note' })
+  @ApiUnauthorizedResponse({
+    description: 'Authenticated reviewer identity is not configured',
+  })
+  @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
+  @ApiNotFoundResponse({ description: 'Population record not found' })
+  @ApiConflictResponse({
+    description: 'The record cannot transition to REJECTED',
+  })
+  reject(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: RejectPopulationRecordDto,
+  ): Promise<PopulationRecordResponseDto> {
+    void villageId;
+    void id;
+    void dto;
+    throw new UnauthorizedException(POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
   }
 }
 

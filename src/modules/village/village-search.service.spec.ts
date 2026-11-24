@@ -2,6 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { DataSource } from 'typeorm';
 import { VillageSearchQueryDto } from './dto/village-search-query.dto';
 import { VillageSearchRow } from './dto/village-search-result.dto';
+import { VillageNameType } from './entities/village-name.entity';
 import {
   VILLAGE_SEARCH_SQL,
   VillageSearchService,
@@ -16,7 +17,7 @@ function row(rank: number): VillageSearchRow {
     nameEn: 'Burqa',
     governorate,
     matchedName: 'Burka',
-    matchedBy: 'ALTERNATIVE_SPELLING',
+    matchedBy: VillageNameType.ALTERNATIVE_SPELLING,
     rank,
   };
 }

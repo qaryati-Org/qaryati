@@ -3,7 +3,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ValidationException } from '../../common/errors/validation.exception';
 import { SourceService } from '../source/source.service';
 import { VerificationStatus } from '../source';
@@ -91,6 +91,7 @@ describe('PopulationService', () => {
   };
   let villages: { findOne: jest.Mock };
   let sources: { ensureExists: jest.Mock };
+  let dataSource: { query: jest.Mock };
   let service: PopulationService;
 
   beforeEach(() => {
@@ -125,11 +126,15 @@ describe('PopulationService', () => {
     };
     villages = { findOne: jest.fn().mockResolvedValue({ id: VILLAGE_ID }) };
     sources = { ensureExists: jest.fn().mockResolvedValue(undefined) };
+    dataSource = {
+      query: jest.fn().mockResolvedValue([{ total: 0, rows: [] }]),
+    };
 
     service = new PopulationService(
       repository as unknown as Repository<PopulationRecord>,
       villages as unknown as VillageService,
       sources as unknown as SourceService,
+      dataSource as unknown as DataSource,
     );
   });
 

@@ -28,6 +28,11 @@ import {
 import { Paginated } from '../../common/pagination/paginated';
 import { Role, Roles } from '../auth';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
+import {
+  PopulationHistoryResponseDto,
+  PopulationHistorySourceDto,
+} from './dto/population-history-response.dto';
 import { PopulationRecordQueryDto } from './dto/population-record-query.dto';
 import { PopulationRecordResponseDto } from './dto/population-record-response.dto';
 import { UpdatePopulationRecordDto } from './dto/update-population-record.dto';
@@ -157,5 +162,59 @@ export class PopulationController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ): Promise<void> {
     return this.populationService.remove(villageId, id);
+  }
+}
+
+@ApiTags('population')
+@Controller('villages/:villageId')
+export class PopulationHistoryController {
+  constructor(private readonly populationService: PopulationService) {}
+
+  @Get('population-history')
+  @ApiOperation({
+    summary: 'Get verified population history for a village',
+    description:
+      'Returns verified observations from oldest to newest; years without verified data are omitted.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiExtraModels(PopulationHistoryResponseDto, PopulationHistorySourceDto)
+  @ApiOkResponse({
+    description: 'Paginated verified population history returned',
+    schema: {
+      type: 'object',
+      required: ['data', 'meta'],
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(PopulationHistoryResponseDto) },
+        },
+        meta: {
+          type: 'object',
+          required: ['page', 'limit', 'total', 'totalPages'],
+          properties: {
+            page: { type: 'integer', description: 'Current page number' },
+            limit: { type: 'integer', description: 'Records per page' },
+            total: {
+              type: 'integer',
+              description: 'Total verified observations',
+            },
+            totalPages: {
+              type: 'integer',
+              description: 'Total number of pages',
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid village ID or pagination parameters',
+  })
+  @ApiNotFoundResponse({ description: 'Village not found' })
+  history(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Query() query: PopulationHistoryQueryDto,
+  ): Promise<Paginated<PopulationHistoryResponseDto>> {
+    return this.populationService.history(villageId, query);
   }
 }

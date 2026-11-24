@@ -1,15 +1,21 @@
 import {
   ConflictException,
+  InternalServerErrorException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { ValidationException } from '../../common/errors/validation.exception';
 import { SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
+import {
+  PopulationHistoryQueryResult,
+  PopulationHistoryResponseDto,
+} from './dto/population-history-response.dto';
 import {
   PopulationRecordQueryDto,
   PopulationSortField,
@@ -27,6 +33,57 @@ const POPULATION_SORT_COLUMNS: Record<PopulationSortField, string> = {
   createdAt: 'record.createdAt',
 };
 
+export const POPULATION_HISTORY_SQL = `
+WITH verified_history AS (
+  SELECT
+    id,
+    village_id AS "villageId",
+    source_id AS "sourceId",
+    reference_year AS "referenceYear",
+    value,
+    LAG(reference_year) OVER history AS "previousReferenceYear",
+    LAG(value) OVER history AS "previousValue"
+  FROM population_records
+  WHERE village_id = $1
+    AND status = 'VERIFIED'
+  WINDOW history AS (ORDER BY reference_year ASC, id ASC)
+),
+page AS (
+  SELECT
+    id,
+    "villageId",
+    "sourceId",
+    "referenceYear",
+    value,
+    "previousReferenceYear",
+    "previousValue",
+    value - "previousValue" AS "populationChange"
+  FROM verified_history
+  ORDER BY "referenceYear" ASC, id ASC
+  LIMIT $2 OFFSET $3
+)
+SELECT
+  (SELECT COUNT(*)::int FROM verified_history) AS total,
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'id', page.id,
+          'villageId', page."villageId",
+          'sourceId', page."sourceId",
+          'referenceYear', page."referenceYear",
+          'value', page.value,
+          'previousReferenceYear', page."previousReferenceYear",
+          'previousValue', page."previousValue",
+          'populationChange', page."populationChange"
+        )
+        ORDER BY page."referenceYear" ASC, page.id ASC
+      )
+      FROM page
+    ),
+    '[]'::json
+  ) AS rows`;
+
 @Injectable()
 export class PopulationService {
   constructor(
@@ -34,6 +91,7 @@ export class PopulationService {
     private readonly populationRecords: Repository<PopulationRecord>,
     private readonly villages: VillageService,
     private readonly sources: SourceService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async list(
@@ -75,6 +133,38 @@ export class PopulationService {
       total,
       query,
     );
+  }
+
+  async history(
+    villageId: string,
+    query: PopulationHistoryQueryDto,
+  ): Promise<Paginated<PopulationHistoryResponseDto>> {
+    await this.villages.findOne(villageId);
+
+    const [result] = await this.dataSource.query<
+      PopulationHistoryQueryResult[]
+    >(POPULATION_HISTORY_SQL, [villageId, query.limit, query.offset]);
+    if (!result) {
+      throw new InternalServerErrorException(
+        'Population history query returned no result',
+      );
+    }
+
+    const sources = await this.sources.findByIds([
+      ...new Set(result.rows.map((row) => row.sourceId)),
+    ]);
+    const sourcesById = new Map(sources.map((source) => [source.id, source]));
+    const data = result.rows.map((row) => {
+      const source = sourcesById.get(row.sourceId);
+      if (!source) {
+        throw new InternalServerErrorException(
+          'Population history contains a record with an unavailable source',
+        );
+      }
+      return PopulationHistoryResponseDto.from(row, source);
+    });
+
+    return paginate(data, Number(result.total), query);
   }
 
   async findOne(

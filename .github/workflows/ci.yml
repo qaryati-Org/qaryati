@@ -34,6 +34,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint:check
+      # `nest build` skips test files, so type errors in *.spec.ts and
+      # test/ would otherwise pass CI unnoticed.
+      - run: npm run typecheck
       - run: npm run build
       - run: npm test
       - run: npm run test:e2e

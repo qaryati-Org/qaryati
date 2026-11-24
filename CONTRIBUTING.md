@@ -68,6 +68,7 @@ Never commit `.env` or real credentials. Add new variables to `.env.example`
 
 ```bash
 npm run lint:check
+npm run typecheck   # also checks test files, which the build skips
 npm test
 npm run test:e2e
 ```

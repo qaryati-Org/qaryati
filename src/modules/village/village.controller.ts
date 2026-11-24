@@ -28,6 +28,9 @@ import { CreateVillageDto } from './dto/create-village.dto';
 import { UpdateVillageDto } from './dto/update-village.dto';
 import { VillageQueryDto } from './dto/village-query.dto';
 import { VillageResponseDto } from './dto/village-response.dto';
+import { VillageSearchQueryDto } from './dto/village-search-query.dto';
+import { VillageSearchResultDto } from './dto/village-search-result.dto';
+import { VillageSearchService } from './village-search.service';
 import { VillageService } from './village.service';
 
 // Write endpoints declare their roles with @Roles; the global RolesGuard
@@ -35,7 +38,10 @@ import { VillageService } from './village.service';
 @ApiTags('villages')
 @Controller('villages')
 export class VillageController {
-  constructor(private readonly villageService: VillageService) {}
+  constructor(
+    private readonly villageService: VillageService,
+    private readonly villageSearchService: VillageSearchService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List villages with search, filter, sort, paging' })
@@ -43,6 +49,19 @@ export class VillageController {
     @Query() query: VillageQueryDto,
   ): Promise<Paginated<VillageResponseDto>> {
     return this.villageService.findAll(query);
+  }
+
+  // Declared before ':id' so "search" is not parsed as a village id.
+  @Get('search')
+  @ApiOperation({
+    summary:
+      'Search villages by Arabic, English and alternative names, ranked by relevance',
+  })
+  @ApiBadRequestResponse({ description: 'Missing or invalid search text' })
+  search(
+    @Query() query: VillageSearchQueryDto,
+  ): Promise<Paginated<VillageSearchResultDto>> {
+    return this.villageSearchService.search(query);
   }
 
   @Get(':id')

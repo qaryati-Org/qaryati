@@ -11,6 +11,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { VillageModule } from './modules/village/village.module';
 import { PopulationModule } from './modules/population/population.module';
+import { HistoryModule } from './modules/history/history.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PopulationModule } from './modules/population/population.module';
     AuthModule,
     UsersModule,
     PopulationModule,
+    HistoryModule,
   ],
 })
 export class AppModule {}

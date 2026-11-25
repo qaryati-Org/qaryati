@@ -1,7 +1,10 @@
+import { BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { HttpClient, HttpResponse } from '../interfaces/http-client.interface';
 import { GeocodingResult } from '../interfaces/geocoding-provider.interface';
 import { GeocodingCacheService } from '../cache/geocoding-cache.service';
 import { GeocodingRetryService } from '../services/geocoding-retry.service';
+import type { AppConfig } from '../../../config/configuration';
 import { NominatimGeocodingProvider } from './nominatim-geocoding.provider';
 import { NominatimResponseParser } from './nominatim-response.parser';
 import { NominatimRetryPolicy } from './nominatim-retry.policy';
@@ -13,12 +16,22 @@ describe('NominatimGeocodingProvider', () => {
   let retryService: GeocodingRetryService;
   let retryPolicy: NominatimRetryPolicy;
   let cacheService: GeocodingCacheService;
+  let configService: ConfigService<AppConfig, true>;
 
   let httpGetMock: jest.Mock;
   let parseMock: jest.Mock;
   let executeMock: jest.Mock;
   let cacheGetMock: jest.Mock;
   let cacheSetMock: jest.Mock;
+  let configGetMock: jest.Mock;
+
+  const geocodingConfig: AppConfig['geocoding'] = {
+    baseUrl: 'https://nominatim.openstreetmap.org',
+    userAgent: 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
+    timeoutMs: 5000,
+    cacheTtlMs: 86400000,
+    cacheMaxEntries: 1000,
+  };
 
   const mockApiResponse = [
     {
@@ -74,12 +87,18 @@ describe('NominatimGeocodingProvider', () => {
       clear: jest.fn(),
     } as unknown as GeocodingCacheService;
 
+    configGetMock = jest.fn().mockReturnValue(geocodingConfig);
+    configService = {
+      get: configGetMock,
+    } as unknown as ConfigService<AppConfig, true>;
+
     provider = new NominatimGeocodingProvider(
       httpClient,
       responseParser,
       retryService,
       retryPolicy,
       cacheService,
+      configService,
     );
   });
 
@@ -94,6 +113,8 @@ describe('NominatimGeocodingProvider', () => {
   });
 
   it('returns null when no results are found', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
     httpGetMock.mockResolvedValue(createResponse([]));
 
     parseMock.mockReturnValue(null);
@@ -101,6 +122,7 @@ describe('NominatimGeocodingProvider', () => {
     const result = await provider.geocode('Unknown Location');
 
     expect(result).toBeNull();
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   it('constructs the correct URL and request options', async () => {
@@ -124,9 +146,32 @@ describe('NominatimGeocodingProvider', () => {
 
     expect(options).toEqual({
       headers: {
-        'User-Agent': 'Qaryati/1.0',
+        'User-Agent': 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
       },
       timeoutMs: 5000,
+    });
+  });
+
+  it('uses the configured base URL, User-Agent, and timeout', async () => {
+    configGetMock.mockReturnValue({
+      ...geocodingConfig,
+      baseUrl: 'https://geocoder.example.test',
+      userAgent: 'TestGeocoder/2.0',
+      timeoutMs: 1250,
+    });
+    httpGetMock.mockResolvedValue(createResponse(mockApiResponse));
+    parseMock.mockReturnValue(mockGeocodingResult);
+
+    await provider.geocode('Nablus, Palestine');
+
+    const [url, options] = httpGetMock.mock.calls[0];
+
+    expect(url.origin).toBe('https://geocoder.example.test');
+    expect(options).toEqual({
+      headers: {
+        'User-Agent': 'TestGeocoder/2.0',
+      },
+      timeoutMs: 1250,
     });
   });
 
@@ -153,17 +198,20 @@ describe('NominatimGeocodingProvider', () => {
     expect(executeMock).toHaveBeenCalledWith(expect.any(Function), retryPolicy);
   });
 
-  it('propagates HTTP client errors', async () => {
+  it('returns null and logs a warning for HTTP client errors', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const error = new Error('HTTP request failed');
 
     httpGetMock.mockRejectedValue(error);
 
-    await expect(provider.geocode('Nablus, Palestine')).rejects.toBe(error);
+    await expect(provider.geocode('Nablus, Palestine')).resolves.toBeNull();
 
+    expect(warnSpy).toHaveBeenCalled();
     expect(cacheSetMock).not.toHaveBeenCalled();
   });
 
-  it('propagates response parser errors', async () => {
+  it('returns null and logs a warning for response parser errors', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const error = new Error('Invalid response');
 
     httpGetMock.mockResolvedValue(createResponse(mockApiResponse));
@@ -172,8 +220,9 @@ describe('NominatimGeocodingProvider', () => {
       throw error;
     });
 
-    await expect(provider.geocode('Nablus, Palestine')).rejects.toBe(error);
+    await expect(provider.geocode('Nablus, Palestine')).resolves.toBeNull();
 
+    expect(warnSpy).toHaveBeenCalled();
     expect(cacheSetMock).not.toHaveBeenCalled();
   });
 
@@ -224,9 +273,10 @@ describe('NominatimGeocodingProvider', () => {
   });
 
   it('rejects an empty address', async () => {
-    await expect(provider.geocode('   ')).rejects.toThrow(
-      'Address must not be empty',
-    );
+    const result = provider.geocode('   ');
+
+    await expect(result).rejects.toBeInstanceOf(BadRequestException);
+    await expect(result).rejects.toThrow('Address must not be empty');
 
     expect(cacheGetMock).not.toHaveBeenCalled();
     expect(httpGetMock).not.toHaveBeenCalled();

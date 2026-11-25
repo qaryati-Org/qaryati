@@ -25,25 +25,29 @@ describe('GeocodingRetryService', () => {
   });
 
   it('retries when the operation fails with a retryable error', async () => {
+    const error = new Error('Temporary failure');
     const operation = jest
       .fn()
-      .mockRejectedValueOnce(new Error('Temporary failure'))
+      .mockRejectedValueOnce(error)
       .mockResolvedValueOnce('success');
 
     const shouldRetry = jest.fn().mockReturnValue(true);
     const getDelay = jest.fn().mockReturnValue(0);
+    const onRetry = jest.fn();
 
     const policy: RetryPolicy = {
       maxRetries: 2,
       shouldRetry,
       getDelay,
+      onRetry,
     };
 
     await expect(service.execute(operation, policy)).resolves.toBe('success');
 
     expect(operation).toHaveBeenCalledTimes(2);
     expect(shouldRetry).toHaveBeenCalledTimes(1);
-    expect(getDelay).toHaveBeenCalledWith(expect.any(Error), 0);
+    expect(getDelay).toHaveBeenCalledWith(error, 0);
+    expect(onRetry).toHaveBeenCalledWith(error, 0, 0);
   });
 
   it('stops immediately when the error is not retryable', async () => {
@@ -52,17 +56,20 @@ describe('GeocodingRetryService', () => {
 
     const shouldRetry = jest.fn().mockReturnValue(false);
     const getDelay = jest.fn().mockReturnValue(0);
+    const onRetry = jest.fn();
 
     const policy: RetryPolicy = {
       maxRetries: 3,
       shouldRetry,
       getDelay,
+      onRetry,
     };
 
     await expect(service.execute(operation, policy)).rejects.toBe(error);
 
     expect(operation).toHaveBeenCalledTimes(1);
     expect(getDelay).not.toHaveBeenCalled();
+    expect(onRetry).not.toHaveBeenCalled();
   });
 
   it('throws the last error after all retry attempts fail', async () => {
@@ -71,11 +78,13 @@ describe('GeocodingRetryService', () => {
 
     const shouldRetry = jest.fn().mockReturnValue(true);
     const getDelay = jest.fn().mockReturnValue(0);
+    const onRetry = jest.fn();
 
     const policy: RetryPolicy = {
       maxRetries: 2,
       shouldRetry,
       getDelay,
+      onRetry,
     };
 
     await expect(service.execute(operation, policy)).rejects.toBe(error);
@@ -86,6 +95,7 @@ describe('GeocodingRetryService', () => {
 
     // No delay is needed after the final failed attempt.
     expect(getDelay).toHaveBeenCalledTimes(2);
+    expect(onRetry).toHaveBeenCalledTimes(2);
   });
 
   it('passes the correct attempt number to the retry policy', async () => {
@@ -143,11 +153,13 @@ describe('GeocodingRetryService', () => {
 
       const shouldRetry = jest.fn().mockReturnValue(true);
       const getDelay = jest.fn().mockReturnValue(1000);
+      const onRetry = jest.fn();
 
       const policy: RetryPolicy = {
         maxRetries: 1,
         shouldRetry,
         getDelay,
+        onRetry,
       };
 
       const execution = service.execute(operation, policy);
@@ -156,6 +168,7 @@ describe('GeocodingRetryService', () => {
       await jest.advanceTimersByTimeAsync(999);
 
       expect(operation).toHaveBeenCalledTimes(1);
+      expect(onRetry).toHaveBeenCalledWith(error, 0, 1000);
 
       // Complete the remaining 1 ms.
       await jest.advanceTimersByTimeAsync(1);

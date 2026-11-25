@@ -1,9 +1,16 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import {
   GeocodingProvider,
   GeocodingResult,
 } from '../interfaces/geocoding-provider.interface';
+import type { AppConfig } from '../../../config/configuration';
 
 import { HTTP_CLIENT } from '../interfaces/geocoding.tokens';
 import type { HttpClient } from '../interfaces/http-client.interface';
@@ -16,6 +23,8 @@ import { GeocodingRetryService } from '../services/geocoding-retry.service';
 
 @Injectable()
 export class NominatimGeocodingProvider implements GeocodingProvider {
+  private readonly logger = new Logger(NominatimGeocodingProvider.name);
+
   constructor(
     @Inject(HTTP_CLIENT)
     private readonly httpClient: HttpClient,
@@ -23,13 +32,14 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
     private readonly retryService: GeocodingRetryService,
     private readonly retryPolicy: NominatimRetryPolicy,
     private readonly cacheService: GeocodingCacheService,
+    private readonly configService: ConfigService<AppConfig, true>,
   ) {}
 
   async geocode(address: string): Promise<GeocodingResult | null> {
     const normalizedAddress = address.trim();
 
     if (normalizedAddress.length === 0) {
-      throw new Error('Address must not be empty');
+      throw new BadRequestException('Address must not be empty');
     }
 
     const cacheKey = normalizedAddress.replace(/\s+/g, ' ').toLowerCase();
@@ -40,24 +50,35 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
       return cachedResult;
     }
 
-    const url = new URL('https://nominatim.openstreetmap.org/search');
+    const geocodingConfig = this.configService.get('geocoding', {
+      infer: true,
+    });
+    const url = new URL('/search', geocodingConfig.baseUrl);
 
     url.searchParams.set('q', normalizedAddress);
     url.searchParams.set('format', 'jsonv2');
     url.searchParams.set('limit', '1');
 
-    const result = await this.retryService.execute(async () => {
-      const response = await this.httpClient.get(url, {
-        headers: {
-          'User-Agent': 'Qaryati/1.0',
-        },
-        timeoutMs: 5000,
-      });
+    let result: GeocodingResult | null;
 
-      const data = await response.json();
+    try {
+      result = await this.retryService.execute(async () => {
+        const response = await this.httpClient.get(url, {
+          headers: {
+            'User-Agent': geocodingConfig.userAgent,
+          },
+          timeoutMs: geocodingConfig.timeoutMs,
+        });
 
-      return this.responseParser.parse(data);
-    }, this.retryPolicy);
+        const data = await response.json();
+
+        return this.responseParser.parse(data);
+      }, this.retryPolicy);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Nominatim geocoding request failed: ${message}`);
+      return null;
+    }
 
     if (result !== null) {
       this.cacheService.set(cacheKey, result);

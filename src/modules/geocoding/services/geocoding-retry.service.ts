@@ -4,6 +4,7 @@ export interface RetryPolicy {
   maxRetries: number;
   shouldRetry(error: unknown): boolean;
   getDelay(error: unknown, attempt: number): number;
+  onRetry?(error: unknown, attempt: number, delayMs: number): void;
 }
 
 @Injectable()
@@ -23,6 +24,7 @@ export class GeocodingRetryService {
         }
 
         const delay = policy.getDelay(error, attempt);
+        policy.onRetry?.(error, attempt, delay);
 
         await this.wait(delay);
       }

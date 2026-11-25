@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { GeocodingResult } from '../interfaces/geocoding-provider.interface';
+import type { AppConfig } from '../../../config/configuration';
 
 interface CacheEntry {
   value: GeocodingResult;
@@ -11,9 +13,16 @@ interface CacheEntry {
 export class GeocodingCacheService {
   private readonly cache = new Map<string, CacheEntry>();
 
-  private readonly ttlMs = 24 * 60 * 60 * 1000;
+  private readonly ttlMs: number;
 
-  private readonly maxEntries = 1000;
+  private readonly maxEntries: number;
+
+  constructor(configService: ConfigService<AppConfig, true>) {
+    const geocodingConfig = configService.get('geocoding', { infer: true });
+
+    this.ttlMs = geocodingConfig.cacheTtlMs;
+    this.maxEntries = geocodingConfig.cacheMaxEntries;
+  }
 
   get(key: string): GeocodingResult | null {
     const entry = this.cache.get(key);

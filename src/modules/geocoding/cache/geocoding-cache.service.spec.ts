@@ -1,8 +1,28 @@
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '../../../config/configuration';
 import { GeocodingCacheService } from './geocoding-cache.service';
 import { GeocodingResult } from '../interfaces/geocoding-provider.interface';
 
 describe('GeocodingCacheService', () => {
   let service: GeocodingCacheService;
+
+  const geocodingConfig: AppConfig['geocoding'] = {
+    baseUrl: 'https://nominatim.openstreetmap.org',
+    userAgent: 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
+    timeoutMs: 5000,
+    cacheTtlMs: 86400000,
+    cacheMaxEntries: 1000,
+  };
+
+  const createConfigService = (
+    overrides: Partial<AppConfig['geocoding']> = {},
+  ): ConfigService<AppConfig, true> =>
+    ({
+      get: jest.fn().mockReturnValue({
+        ...geocodingConfig,
+        ...overrides,
+      }),
+    }) as unknown as ConfigService<AppConfig, true>;
 
   const mockResult: GeocodingResult = {
     latitude: 32.2211,
@@ -11,7 +31,7 @@ describe('GeocodingCacheService', () => {
   };
 
   beforeEach(() => {
-    service = new GeocodingCacheService();
+    service = new GeocodingCacheService(createConfigService());
   });
 
   describe('get', () => {
@@ -61,6 +81,23 @@ describe('GeocodingCacheService', () => {
         jest.useRealTimers();
       }
     });
+
+    it('uses the configured cache TTL', () => {
+      jest.useFakeTimers();
+
+      try {
+        service = new GeocodingCacheService(
+          createConfigService({ cacheTtlMs: 1000 }),
+        );
+        service.set('nablus', mockResult);
+
+        jest.advanceTimersByTime(1000);
+
+        expect(service.get('nablus')).toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   describe('set', () => {
@@ -91,6 +128,20 @@ describe('GeocodingCacheService', () => {
       expect(service.get('location-0')).toBeNull();
       expect(service.get('location-1')).toEqual(mockResult);
       expect(service.get('new-location')).toEqual(mockResult);
+    });
+
+    it('uses the configured maximum number of entries', () => {
+      service = new GeocodingCacheService(
+        createConfigService({ cacheMaxEntries: 2 }),
+      );
+
+      service.set('location-1', mockResult);
+      service.set('location-2', mockResult);
+      service.set('location-3', mockResult);
+
+      expect(service.get('location-1')).toBeNull();
+      expect(service.get('location-2')).toEqual(mockResult);
+      expect(service.get('location-3')).toEqual(mockResult);
     });
 
     it('refreshes insertion order when updating an existing key', () => {

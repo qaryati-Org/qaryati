@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   HttpNetworkError,
   HttpResponseError,
@@ -32,6 +33,41 @@ describe('NominatimRetryPolicy', () => {
       const error = new HttpResponseError(status, new Headers());
 
       expect(policy.shouldRetry(error)).toBe(true);
+    });
+
+    it('retries HTTP 429 when Retry-After is exactly ten seconds', () => {
+      const error = new HttpResponseError(
+        429,
+        new Headers({
+          'Retry-After': '10',
+        }),
+      );
+
+      expect(policy.shouldRetry(error)).toBe(true);
+    });
+
+    it('does not retry HTTP 429 when Retry-After exceeds ten seconds', () => {
+      const error = new HttpResponseError(
+        429,
+        new Headers({
+          'Retry-After': '10.001',
+        }),
+      );
+
+      expect(policy.shouldRetry(error)).toBe(false);
+    });
+
+    it('does not retry HTTP 429 when its Retry-After date exceeds ten seconds', () => {
+      jest.spyOn(Date, 'now').mockReturnValue(10000);
+
+      const error = new HttpResponseError(
+        429,
+        new Headers({
+          'Retry-After': new Date(25000).toUTCString(),
+        }),
+      );
+
+      expect(policy.shouldRetry(error)).toBe(false);
     });
 
     it.each([400, 401, 403, 404, 422])(
@@ -82,6 +118,17 @@ describe('NominatimRetryPolicy', () => {
       );
 
       expect(policy.getDelay(error, 0)).toBe(5000);
+    });
+
+    it('does not clamp Retry-After delays over ten seconds', () => {
+      const error = new HttpResponseError(
+        429,
+        new Headers({
+          'Retry-After': '15',
+        }),
+      );
+
+      expect(policy.getDelay(error, 0)).toBe(15000);
     });
 
     it('uses the default delay when Retry-After is missing', () => {
@@ -162,6 +209,29 @@ describe('NominatimRetryPolicy', () => {
       );
 
       expect(policy.getDelay(error, 0)).toBe(1000);
+    });
+  });
+
+  describe('onRetry', () => {
+    it('logs the retry attempt, delay, and error message', () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const error = new Error('Temporary failure');
+
+      policy.onRetry(error, 0, 1000);
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Nominatim retry attempt 1 scheduled after 1000ms: Temporary failure',
+      );
+    });
+
+    it('does not log while checking retryability or calculating delay', () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      const error = new HttpNetworkError('Network failure');
+
+      policy.shouldRetry(error);
+      policy.getDelay(error, 0);
+
+      expect(warnSpy).not.toHaveBeenCalled();
     });
   });
 });

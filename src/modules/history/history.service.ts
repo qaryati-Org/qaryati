@@ -13,16 +13,22 @@ import {
 } from '../../common/database/pg-errors';
 import { ValidationException } from '../../common/errors/validation.exception';
 import { paginate, Paginated } from '../../common/pagination/paginated';
-import { SourceService, VerificationStatus } from '../source';
+import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateHistoryRecordDto } from './dto/create-history-record.dto';
 import { HistoryRecordQueryDto } from './dto/history-record-query.dto';
 import { HistoryRecordResponseDto } from './dto/history-record-response.dto';
+import { RejectHistoryRecordDto } from './dto/reject-history-record.dto';
 import { UpdateHistoryRecordDto } from './dto/update-history-record.dto';
+import { VerifyHistoryRecordDto } from './dto/verify-history-record.dto';
 import { HistoryRecord } from './entities/history-record.entity';
 
 const UNIQUE_OVERVIEW_CONSTRAINT = 'uq_history_records_village_overview';
 const SOURCE_FOREIGN_KEY = 'history_records_source_id_fkey';
+
+export interface HistoryReviewerContext {
+  readonly reviewerId: string;
+}
 
 @Injectable()
 export class HistoryService {
@@ -169,6 +175,36 @@ export class HistoryService {
     }
   }
 
+  verify(
+    villageId: string,
+    recordId: string,
+    trustedReviewerContext: HistoryReviewerContext,
+    dto: VerifyHistoryRecordDto,
+  ): Promise<HistoryRecordResponseDto> {
+    return this.review(
+      villageId,
+      recordId,
+      trustedReviewerContext,
+      VerificationStatus.VERIFIED,
+      dto.reviewNote ?? null,
+    );
+  }
+
+  reject(
+    villageId: string,
+    recordId: string,
+    trustedReviewerContext: HistoryReviewerContext,
+    dto: RejectHistoryRecordDto,
+  ): Promise<HistoryRecordResponseDto> {
+    return this.review(
+      villageId,
+      recordId,
+      trustedReviewerContext,
+      VerificationStatus.REJECTED,
+      dto.reviewNote,
+    );
+  }
+
   private async getOrFail(
     villageId: string,
     recordId: string,
@@ -183,6 +219,38 @@ export class HistoryService {
       );
     }
     return record;
+  }
+
+  private async review(
+    villageId: string,
+    recordId: string,
+    trustedReviewerContext: HistoryReviewerContext,
+    targetStatus: VerificationStatus,
+    reviewNote: string | null,
+  ): Promise<HistoryRecordResponseDto> {
+    const record = await this.getOrFail(villageId, recordId);
+    assertTransition(record.status, targetStatus);
+
+    const result = await this.historyRecords.update(
+      {
+        id: recordId,
+        villageId,
+        status: record.status,
+      },
+      {
+        status: targetStatus,
+        reviewedAt: new Date(),
+        reviewedById: trustedReviewerContext.reviewerId,
+        reviewNote,
+      },
+    );
+    if (result.affected !== 1) {
+      throw new ConflictException(
+        'History record status changed during review',
+      );
+    }
+
+    return this.toResponse(await this.getOrFail(villageId, recordId));
   }
 
   private async toResponse(

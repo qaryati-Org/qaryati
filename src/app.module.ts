@@ -1,3 +1,4 @@
+
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -10,6 +11,8 @@ import { SourceModule } from './modules/source/source.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { VillageModule } from './modules/village/village.module';
+import { PopulationModule } from './modules/population/population.module';
+import { HistoryModule } from './modules/history/history.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 
 @Module({
@@ -31,6 +34,8 @@ import { GeocodingModule } from './modules/geocoding/geocoding.module';
     SourceModule,
     AuthModule,
     UsersModule,
+    PopulationModule,
+    HistoryModule,
     GeocodingModule,
   ],
 })

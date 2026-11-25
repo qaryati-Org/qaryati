@@ -31,6 +31,7 @@ npm run start:dev
 npm test            # unit tests
 npm run test:e2e    # e2e tests (needs `docker compose up -d db`)
 npm run lint:check
+npm run typecheck   # type-checks src and test, including *.spec.ts
 ```
 
 ### Migrations
@@ -44,6 +45,24 @@ npm run migration:create src/database/migrations/AddSearchIndexes        # empty
 npm run migration:run
 npm run migration:revert
 ```
+
+### Seed data
+
+```bash
+npm run seed                          # real villages + alternative names (safe to re-run)
+npm run seed:perf                     # 50,000 synthetic villages for k6 load tests
+npm run seed:perf -- --count 20000    # a chosen number instead
+npm run seed:perf -- --clear          # remove all synthetic rows
+```
+
+- `npm run seed` adds about 116 real villages in all 16 governorates and some
+  well-known alternative and historical names. Existing rows are never
+  overwritten. Population figures and source citations are not seeded: they
+  should be entered with their real provenance.
+- `npm run seed:perf` is only for performance testing. Synthetic villages have
+  an English name starting with `PERF `, and the same names are generated on
+  every run, so before/after measurements compare the same data. It refuses
+  to run with `NODE_ENV=production`.
 
 ## Project structure
 
@@ -79,6 +98,15 @@ src/
 
 - Send `x-correlation-id` to trace a request; it is echoed in the response,
   the logs, and error bodies.
+
+## Population data rules
+
+- A population value of `0` is valid and represents a documented depopulated
+  village; negative values are invalid.
+- Population records retain the reviewer through `reviewed_by_id`, which
+  restricts deleting a referenced user. Deactivate reviewers with
+  `is_active = false` instead of deleting their accounts, so the review
+  history remains attributable.
 
 ## Team
 

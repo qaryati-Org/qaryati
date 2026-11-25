@@ -27,6 +27,7 @@ describe('SourceService', () => {
 
   let repo: {
     findOneBy: jest.Mock;
+    findBy: jest.Mock;
     existsBy: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -37,12 +38,85 @@ describe('SourceService', () => {
   beforeEach(() => {
     repo = {
       findOneBy: jest.fn(),
+      findBy: jest.fn().mockResolvedValue([]),
       existsBy: jest.fn(),
       create: jest.fn((source: Partial<Source>) => source),
       save: jest.fn((source: Source) => Promise.resolve(sourceRow(source))),
       remove: jest.fn(),
     };
     service = new SourceService(repo as unknown as Repository<Source>);
+  });
+
+  describe('findByIds', () => {
+    it('returns an empty result without querying for an empty ID array', async () => {
+      await expect(service.findByIds([])).resolves.toEqual([]);
+
+      expect(repo.findBy).not.toHaveBeenCalled();
+    });
+
+    it('returns the matching source as a response DTO', async () => {
+      const source = sourceRow({ id: 'source-1' });
+      repo.findBy.mockResolvedValue([source]);
+
+      await expect(service.findByIds(['source-1'])).resolves.toEqual([
+        {
+          id: 'source-1',
+          title: 'Census of Palestine',
+          type: SourceType.BOOK,
+          author: 'Researcher',
+          url: 'https://example.com',
+          year: 1997,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ]);
+      expect(repo.findBy).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns multiple matching sources', async () => {
+      const first = sourceRow({ id: 'source-1' });
+      const second = sourceRow({ id: 'source-2', title: 'Village survey' });
+      repo.findBy.mockResolvedValue([first, second]);
+
+      const result = await service.findByIds(['source-1', 'source-2']);
+
+      expect(result.map((source) => source.id)).toEqual([
+        'source-1',
+        'source-2',
+      ]);
+      expect(result.map((source) => source.title)).toEqual([
+        'Census of Palestine',
+        'Village survey',
+      ]);
+      expect(repo.findBy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not return duplicate sources for duplicate input IDs', async () => {
+      const source = sourceRow({ id: 'source-1' });
+      repo.findBy.mockResolvedValue([source]);
+
+      const result = await service.findByIds(['source-1', 'source-1']);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('source-1');
+      expect(repo.findBy).toHaveBeenCalledTimes(1);
+    });
+
+    it('omits missing source IDs without failing', async () => {
+      const source = sourceRow({ id: 'source-1' });
+      repo.findBy.mockResolvedValue([source]);
+
+      const result = await service.findByIds(['source-1', 'missing']);
+
+      expect(result.map((item) => item.id)).toEqual(['source-1']);
+    });
+
+    it('propagates repository failures unchanged', async () => {
+      const failure = new Error('source query failed');
+      repo.findBy.mockRejectedValue(failure);
+
+      await expect(service.findByIds(['source-1'])).rejects.toBe(failure);
+    });
   });
 
   describe('create', () => {

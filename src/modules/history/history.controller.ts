@@ -94,15 +94,10 @@ export class HistoryController {
 
   @Post()
   @Roles(Role.EDITOR, Role.ADMIN)
-  @UseGuards(HistoryAuthenticationGuard)
   @ApiOperation({ summary: 'Create a history record' })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiCreatedResponse({ type: HistoryRecordResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid village ID or history data' })
-  @ApiUnauthorizedResponse({
-    description: 'History writes require configured authentication',
-  })
-  @ApiForbiddenResponse({ description: 'Editor role is not permitted' })
   @ApiNotFoundResponse({ description: 'Village not found' })
   @ApiConflictResponse({
     description: 'An overview already exists for this village',
@@ -117,7 +112,6 @@ export class HistoryController {
 
   @Patch(':id')
   @Roles(Role.EDITOR, Role.ADMIN)
-  @UseGuards(HistoryAuthenticationGuard)
   @ApiOperation({
     summary: 'Update a pending history record',
     description: 'Only PENDING history records can be edited.',
@@ -126,10 +120,6 @@ export class HistoryController {
   @ApiParam({ name: 'id', type: String, description: 'History record UUID' })
   @ApiOkResponse({ type: HistoryRecordResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or history data' })
-  @ApiUnauthorizedResponse({
-    description: 'History writes require configured authentication',
-  })
-  @ApiForbiddenResponse({ description: 'Editor role is not permitted' })
   @ApiNotFoundResponse({ description: 'Village or history record not found' })
   @ApiConflictResponse({ description: 'History record cannot be edited' })
   @ApiUnprocessableEntityResponse({ description: 'Source not found' })
@@ -143,17 +133,12 @@ export class HistoryController {
 
   @Delete(':id')
   @Roles(Role.ADMIN)
-  @UseGuards(HistoryAuthenticationGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a pending or rejected history record' })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'History record UUID' })
   @ApiNoContentResponse({ description: 'History record deleted' })
   @ApiBadRequestResponse({ description: 'Invalid village or record ID' })
-  @ApiUnauthorizedResponse({
-    description: 'History writes require configured authentication',
-  })
-  @ApiForbiddenResponse({ description: 'Admin role is required' })
   @ApiNotFoundResponse({ description: 'Village or history record not found' })
   @ApiConflictResponse({ description: 'VERIFIED records cannot be deleted' })
   remove(

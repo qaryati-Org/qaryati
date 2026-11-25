@@ -24,14 +24,38 @@ describe('HistoryController and authentication guard', () => {
   };
 
   beforeEach(async () => {
+    const responseDto = {
+      id: RECORD_ID,
+      villageId: VILLAGE_ID,
+      sourceId: '00000000-0000-4000-8000-000000000003',
+      type: HistoryRecordType.EVENT,
+      title: 'History record',
+      description: 'Historical description',
+      startYear: 1948,
+      endYear: null,
+      status: 'PENDING',
+      reviewedAt: null,
+      reviewedById: null,
+      reviewNote: null,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      source: {
+        id: '00000000-0000-4000-8000-000000000003',
+        title: 'Source',
+        type: 'BOOK',
+        author: null,
+        url: null,
+        year: null,
+      },
+    };
     historyService = {
       list: jest.fn().mockResolvedValue({
         data: [],
         meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
       }),
-      create: jest.fn(),
-      update: jest.fn(),
-      remove: jest.fn(),
+      create: jest.fn().mockResolvedValue(responseDto),
+      update: jest.fn().mockResolvedValue(responseDto),
+      remove: jest.fn().mockResolvedValue(undefined),
       verify: jest.fn(),
       reject: jest.fn(),
     };
@@ -80,45 +104,73 @@ describe('HistoryController and authentication guard', () => {
     expect(historyService.list).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['POST', '', { type: 'EVENT' }],
-    ['PATCH', `/${RECORD_ID}`, { title: 'Updated' }],
-    ['DELETE', `/${RECORD_ID}`, undefined],
-    ['POST', `/${RECORD_ID}/verify`, { reviewNote: 'Approved' }],
-    ['POST', `/${RECORD_ID}/reject`, { reviewNote: 'Rejected' }],
-  ])(
-    'fails closed for anonymous %s %s without calling the service',
-    async (method, suffix, body) => {
-      const url = `${BASE_PATH}${suffix}`;
-      if (method === 'POST') {
-        const operation = request(app.getHttpServer()).post(url);
-        if (body !== undefined) {
-          await operation.send(body).expect(401);
-        } else {
-          await operation.expect(401);
-        }
-      } else if (method === 'PATCH') {
-        await request(app.getHttpServer()).patch(url).send(body).expect(401);
-      } else {
-        await request(app.getHttpServer()).delete(url).expect(401);
-      }
+  it('allows CRUD routes under the current permissive RolesGuard', async () => {
+    await request(app.getHttpServer())
+      .post(BASE_PATH)
+      .send({
+        type: 'EVENT',
+        title: 'History record',
+        description: 'Historical description',
+        sourceId: '00000000-0000-4000-8000-000000000003',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`${BASE_PATH}/${RECORD_ID}`)
+      .send({ title: 'Updated title' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .delete(`${BASE_PATH}/${RECORD_ID}`)
+      .expect(204);
 
-      expect(historyService.create).not.toHaveBeenCalled();
-      expect(historyService.update).not.toHaveBeenCalled();
-      expect(historyService.remove).not.toHaveBeenCalled();
+    expect(historyService.create).toHaveBeenCalledTimes(1);
+    expect(historyService.update).toHaveBeenCalledTimes(1);
+    expect(historyService.remove).toHaveBeenCalledWith(VILLAGE_ID, RECORD_ID);
+  });
+
+  it('rejects invalid CRUD bodies and UUIDs before calling the service', async () => {
+    await request(app.getHttpServer())
+      .post(BASE_PATH)
+      .send({ type: 'NOT_A_TYPE', reviewerId: RECORD_ID })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/v1/villages/not-a-uuid/history')
+      .send({
+        type: 'EVENT',
+        title: 'History record',
+        description: 'Historical description',
+        sourceId: '00000000-0000-4000-8000-000000000003',
+      })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`${BASE_PATH}/not-a-uuid`)
+      .send({ title: 'Updated title' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .delete(`${BASE_PATH}/not-a-uuid`)
+      .expect(400);
+
+    expect(historyService.create).not.toHaveBeenCalled();
+    expect(historyService.update).not.toHaveBeenCalled();
+    expect(historyService.remove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['verify', { reviewNote: 'Approved' }],
+    ['reject', { reviewNote: 'Rejected' }],
+  ])(
+    'keeps the %s HTTP endpoint blocked without trusted auth',
+    async (action, body) => {
+      await request(app.getHttpServer())
+        .post(`${BASE_PATH}/${RECORD_ID}/${action}`)
+        .set('x-user-id', RECORD_ID)
+        .set('x-role', 'ADMIN')
+        .send(body)
+        .expect(401);
+
       expect(historyService.verify).not.toHaveBeenCalled();
       expect(historyService.reject).not.toHaveBeenCalled();
     },
   );
-
-  it('returns 401 before validating write-body content', async () => {
-    await request(app.getHttpServer())
-      .post(BASE_PATH)
-      .send({ type: 'NOT_A_TYPE', reviewerId: RECORD_ID })
-      .expect(401);
-
-    expect(historyService.create).not.toHaveBeenCalled();
-  });
 
   it('has a guard that always rejects without a trusted identity', () => {
     const guard = new HistoryAuthenticationGuard();

@@ -90,25 +90,27 @@ use the standard pagination envelope:
 }
 ```
 
-### Write routes
+### Create, update, and delete
 
-The following routes are implemented, but **currently all return HTTP 401**
-because trusted authentication has not been integrated:
+The current CRUD routes are:
 
-- `POST /api/v1/villages/:villageId/history`
-- `PATCH /api/v1/villages/:villageId/history/:id`
-- `DELETE /api/v1/villages/:villageId/history/:id`
-- `POST /api/v1/villages/:villageId/history/:id/verify`
-- `POST /api/v1/villages/:villageId/history/:id/reject`
+- `POST /api/v1/villages/:villageId/history` — creates a `PENDING` record and
+  returns `201`. Pending records are hidden from the public listing until
+  verified.
+- `PATCH /api/v1/villages/:villageId/history/:id` — updates a `PENDING` record
+  and returns `200`. Verified records cannot be edited.
+- `DELETE /api/v1/villages/:villageId/history/:id` — deletes a `PENDING` or
+  `REJECTED` record and returns `204`. Verified records cannot be deleted.
 
-This is deliberate fail-closed behavior. `@Roles` metadata documents intended
-roles but does not enforce authorization: the current global `RolesGuard` is
-permissive. A History-specific guard blocks every write route, and verify/reject
-handlers do not fabricate a reviewer identity. **Do not treat these HTTP
-write routes as usable.** Service-layer create, update, delete, verify, and
-reject operations are implemented and tested independently.
+These routes have `@Roles` metadata, but the project's current global
+`RolesGuard` is permissive and does not enforce roles. The CRUD routes are
+therefore reachable without authentication, including by anonymous clients.
+This temporary behavior matches Population's current API behavior; it is **not
+secure authorization**. Trusted authentication and actual role enforcement
+are still required as part of Lina's authentication integration. Do not rely
+on the `@Roles` annotations as an access control boundary.
 
-If authentication is integrated, the request fields are:
+Request fields:
 
 - **Create:** required `type`, non-whitespace `title` (maximum 255),
   non-whitespace `description` (maximum 10,000), and UUID `sourceId`;
@@ -122,17 +124,30 @@ If authentication is integrated, the request fields are:
 - **Reject:** required nonempty, non-whitespace `reviewNote` (maximum 1,000
   characters).
 
-The service response shape includes explicitly mapped record fields and the
-nested source provenance object described above. If writes are later enabled,
-create returns `201`, update returns `200`, delete returns `204`, and
-verify/reject return `200`.
+The create and update response shape includes explicitly mapped record fields
+and the nested source provenance object described above.
 
 Important errors include `400` for invalid UUIDs, request fields, query
-parameters, or year ranges; `401` for all current write requests; `404` for an
-unknown village or record; `409` for duplicate overviews, forbidden state
-changes, or a concurrent write conflict; and `422` for an unknown source.
-`403` is documented for future role enforcement but is not produced by the
-current permissive RolesGuard.
+parameters, or year ranges; `404` for an unknown village or record; `409` for
+duplicate overviews, forbidden state changes, or a concurrent write conflict;
+and `422` for an unknown source. CRUD `POST`, `PATCH`, and `DELETE` do not
+currently return `401` or `403` for missing roles because the global guard is
+permissive.
+
+### Verify and reject
+
+- `POST /api/v1/villages/:villageId/history/:id/verify`
+- `POST /api/v1/villages/:villageId/history/:id/reject`
+
+Both HTTP review routes intentionally return `401` until trusted authentication
+and role enforcement are integrated. They have a History-specific guard, and
+the controller does not fabricate a reviewer identity or invoke the review
+service methods. The service implements and tests the complete verification
+workflow independently; see [Verification workflow](#verification-workflow).
+When the HTTP routes are safely enabled, verify will accept an optional
+`reviewNote` (maximum 1,000 characters; explicit `null` is invalid), and reject
+will require a nonempty, non-whitespace `reviewNote` (maximum 1,000
+characters).
 
 ## Verification workflow
 

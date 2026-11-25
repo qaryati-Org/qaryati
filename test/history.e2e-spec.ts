@@ -560,49 +560,120 @@ describe('History module (e2e)', () => {
     await http().get(`${historyPath()}?status=PENDING`).expect(400);
   });
 
-  it('blocks anonymous write HTTP requests without mutating records', async () => {
+  it('creates, updates, and deletes through the current permissive CRUD routes', async () => {
+    const created = await http()
+      .post(historyPath())
+      .send({
+        type: HistoryRecordType.EVENT,
+        title: 'HTTP-created history',
+        description: 'Created through the public CRUD route',
+        sourceId: fixtureIds.sources[0],
+        startYear: 2000,
+      })
+      .expect(201);
+    const id = created.body.id as string;
+    recordIds.add(id);
+
+    expect(created.body).toMatchObject({
+      villageId: fixtureIds.village,
+      sourceId: fixtureIds.sources[0],
+      type: HistoryRecordType.EVENT,
+      title: 'HTTP-created history',
+      status: VerificationStatus.PENDING,
+      reviewedAt: null,
+      reviewedById: null,
+      reviewNote: null,
+      source: { id: fixtureIds.sources[0] },
+    });
+
+    const updated = await http()
+      .patch(`${historyPath()}/${id}`)
+      .send({ title: 'HTTP-updated history' })
+      .expect(200);
+    expect(updated.body).toMatchObject({
+      id,
+      title: 'HTTP-updated history',
+      status: VerificationStatus.PENDING,
+      reviewedAt: null,
+      reviewedById: null,
+      reviewNote: null,
+    });
+
+    await http().delete(`${historyPath()}/${id}`).expect(204);
+    expect(await readRecord(id)).toBeUndefined();
+    recordIds.delete(id);
+  });
+
+  it('protects VERIFIED records from HTTP update and delete', async () => {
+    const id = await insertRecord({
+      status: VerificationStatus.VERIFIED,
+      reviewedById: reviewerId,
+    });
+    const before = await readRecord(id);
+
+    await http()
+      .patch(`${historyPath()}/${id}`)
+      .send({ title: 'Must not update verified history' })
+      .expect(409);
+    await http().delete(`${historyPath()}/${id}`).expect(409);
+
+    expect(await readRecord(id)).toEqual(before);
+  });
+
+  it('rejects invalid HTTP CRUD bodies and UUIDs', async () => {
     const id = await insertRecord();
     const before = await readRecord(id);
     const beforeCount = await db().query<{ count: number }[]>(
       'SELECT count(*)::int AS count FROM history_records WHERE village_id = $1',
       [fixtureIds.village],
     );
-    const createBody = {
-      type: HistoryRecordType.EVENT,
-      title: 'Anonymous write attempt',
-      description: 'Should not persist',
-      sourceId: fixtureIds.sources[0],
-      startYear: 2000,
-    };
 
-    await http().post(historyPath()).send(createBody).expect(401);
-    await http()
-      .patch(`${historyPath()}/${id}`)
-      .send({ title: 'Should not update' })
-      .expect(401);
-    await http()
-      .delete(`${historyPath()}/${id}`)
-      .set('x-user-id', reviewerId!)
-      .set('x-role', 'ADMIN')
-      .expect(401);
-    await http()
-      .post(`${historyPath()}/${id}/verify`)
-      .send({ reviewerId, reviewNote: 'Forged reviewer' })
-      .expect(401);
-    await http()
-      .post(`${historyPath()}/${id}/reject`)
-      .send({ reviewerId, reviewNote: 'Forged reviewer' })
-      .expect(401);
     await http()
       .post(historyPath())
       .send({ type: 'INVALID', reviewerId })
-      .expect(401);
+      .expect(400);
+    await http()
+      .post('/api/v1/villages/not-a-uuid/history')
+      .send({
+        type: HistoryRecordType.EVENT,
+        title: 'Invalid path',
+        description: 'Must not be created',
+        sourceId: fixtureIds.sources[0],
+      })
+      .expect(400);
+    await http()
+      .patch(`${historyPath()}/${id}`)
+      .send({ title: ' ' })
+      .expect(400);
+    await http()
+      .patch(`${historyPath()}/not-a-uuid`)
+      .send({ title: 'Valid' })
+      .expect(400);
+    await http().delete(`${historyPath()}/not-a-uuid`).expect(400);
 
     const [{ count: afterCount }] = await db().query<{ count: number }[]>(
       'SELECT count(*)::int AS count FROM history_records WHERE village_id = $1',
       [fixtureIds.village],
     );
     expect(afterCount).toBe(beforeCount[0].count);
+    expect(await readRecord(id)).toEqual(before);
+  });
+
+  it('blocks HTTP verification and rejection without trusted identity or mutation', async () => {
+    const id = await insertRecord();
+    const before = await readRecord(id);
+    await http()
+      .post(`${historyPath()}/${id}/verify`)
+      .set('x-user-id', reviewerId!)
+      .set('x-role', 'ADMIN')
+      .send({ reviewerId, reviewNote: 'Forged reviewer' })
+      .expect(401);
+    await http()
+      .post(`${historyPath()}/${id}/reject`)
+      .set('x-user-id', reviewerId!)
+      .set('x-role', 'ADMIN')
+      .send({ reviewerId, reviewNote: 'Forged reviewer' })
+      .expect(401);
     expect(await readRecord(id)).toEqual(before);
   });
 });

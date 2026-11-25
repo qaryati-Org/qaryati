@@ -46,6 +46,24 @@ npm run migration:run
 npm run migration:revert
 ```
 
+### Seed data
+
+```bash
+npm run seed                          # real villages + alternative names (safe to re-run)
+npm run seed:perf                     # 50,000 synthetic villages for k6 load tests
+npm run seed:perf -- --count 20000    # a chosen number instead
+npm run seed:perf -- --clear          # remove all synthetic rows
+```
+
+- `npm run seed` adds about 116 real villages in all 16 governorates and some
+  well-known alternative and historical names. Existing rows are never
+  overwritten. Population figures and source citations are not seeded: they
+  should be entered with their real provenance.
+- `npm run seed:perf` is only for performance testing. Synthetic villages have
+  an English name starting with `PERF `, and the same names are generated on
+  every run, so before/after measurements compare the same data. It refuses
+  to run with `NODE_ENV=production`.
+
 ## Project structure
 
 ```

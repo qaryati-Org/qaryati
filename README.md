@@ -64,6 +64,18 @@ npm run seed:perf -- --clear          # remove all synthetic rows
   every run, so before/after measurements compare the same data. It refuses
   to run with `NODE_ENV=production`.
 
+### Load tests (k6)
+
+```bash
+npm run seed:perf                        # the data set the tests are measured on
+npm run build && node dist/main          # run the API from the production build
+k6 run k6/search-read-heavy.js           # read-heavy: GET /villages/search
+```
+
+Results and analysis: [docs/performance/search.md](docs/performance/search.md).
+Trigram indexes made search about 22× faster at p95 (470 ms → 22 ms) with 50
+concurrent users on 50,000 villages.
+
 ## Project structure
 
 ```

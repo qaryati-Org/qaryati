@@ -5,9 +5,9 @@ record belongs to one village and cites a required source. The service uses
 `VillageService` and `SourceService` for those references and includes a source
 summary in responses.
 
-The current `LandmarkType` values are `SPRING`, `RELIGIOUS_SITE`,
-`ARCHAEOLOGICAL_SITE`, `OLD_BUILDING`, and `VIEWPOINT`. These categories were
-chosen for the implementation and still need team confirmation.
+The `LandmarkType` values are `SPRING`, `RELIGIOUS_SITE`,
+`ARCHAEOLOGICAL_SITE`, `OLD_BUILDING`, and `VIEWPOINT`, matching the course
+examples.
 
 ## API
 

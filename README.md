@@ -76,6 +76,37 @@ Results and analysis: [docs/performance/search.md](docs/performance/search.md).
 Trigram indexes made search about 22× faster at p95 (470 ms → 22 ms) with 50
 concurrent users on 50,000 villages.
 
+## Architecture
+
+A **modular monolith**: one NestJS application and one PostgreSQL database,
+split into feature modules that each team member owns
+([ADR-001](docs/adr/001-modular-monolith.md)).
+
+```mermaid
+flowchart LR
+    C[Clients<br/>API-Dog · k6] -- "HTTP /api/v1" --> API
+    subgraph API["Qaryati API (NestJS)"]
+        direction TB
+        MW[middleware · global guard · validation · error filter]
+        M[feature modules<br/>village · source · population · history<br/>auth · users · geocoding]
+        MW --> M
+    end
+    API -- "TypeORM + native SQL" --> DB[(PostgreSQL 16)]
+    API -- "timeout · retry · rate limit · cache" --> N[Nominatim]
+```
+
+- Inside a module: **controller → service → repository**, with DTOs for input
+  validation and response shaping.
+- Modules talk only through **exported services**, never through another
+  module's tables. Shared code lives in `src/common/`.
+- Data rules (unique names, valid years, foreign keys) are enforced by
+  **database constraints** and mapped to clear `409`/`422` errors.
+- Conflicting facts from different sources are stored as **separate
+  records** (`PENDING → VERIFIED / REJECTED`) and never silently overwritten.
+
+Full description with module, request-flow and CI diagrams:
+**[docs/architecture.md](docs/architecture.md)**.
+
 ## Project structure
 
 ```
@@ -129,5 +160,6 @@ src/
 | Ahmad | Sources/provenance, population, history, heritage |
 | Yahya | Geography, external geocoding API, economy, facilities |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow and
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow,
+[docs/architecture.md](docs/architecture.md) for the architecture and
 [docs/adr](docs/adr) for architecture decisions.

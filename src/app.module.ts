@@ -12,6 +12,7 @@ import { UsersModule } from './modules/users/users.module';
 import { VillageModule } from './modules/village/village.module';
 import { PopulationModule } from './modules/population/population.module';
 import { HistoryModule } from './modules/history/history.module';
+import { GeocodingModule } from './modules/geocoding/geocoding.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { HistoryModule } from './modules/history/history.module';
     UsersModule,
     PopulationModule,
     HistoryModule,
+    GeocodingModule,
   ],
 })
 export class AppModule {}

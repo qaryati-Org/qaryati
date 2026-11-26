@@ -9,15 +9,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { isForeignKeyViolation } from '../../common/database/pg-errors';
 import { paginate, Paginated } from '../../common/pagination/paginated';
-import { SourceService, VerificationStatus } from '../source';
+import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateCulturalTraitDto } from './dto/create-cultural-trait.dto';
 import { CulturalTraitQueryDto } from './dto/cultural-trait-query.dto';
 import { CulturalTraitResponseDto } from './dto/cultural-trait-response.dto';
+import { RejectCulturalTraitDto } from './dto/reject-cultural-trait.dto';
 import { UpdateCulturalTraitDto } from './dto/update-cultural-trait.dto';
+import { VerifyCulturalTraitDto } from './dto/verify-cultural-trait.dto';
 import { CulturalTrait } from './entities/cultural-trait.entity';
 
 const SOURCE_FOREIGN_KEY = 'cultural_traits_source_id_fkey';
+
+export interface CulturalTraitReviewerContext {
+  readonly reviewerId: string;
+}
 
 @Injectable()
 export class CulturalTraitService {
@@ -166,6 +172,36 @@ export class CulturalTraitService {
     }
   }
 
+  verify(
+    villageId: string,
+    culturalTraitId: string,
+    trustedReviewerContext: CulturalTraitReviewerContext,
+    dto: VerifyCulturalTraitDto,
+  ): Promise<CulturalTraitResponseDto> {
+    return this.review(
+      villageId,
+      culturalTraitId,
+      trustedReviewerContext,
+      VerificationStatus.VERIFIED,
+      dto.reviewNote ?? null,
+    );
+  }
+
+  reject(
+    villageId: string,
+    culturalTraitId: string,
+    trustedReviewerContext: CulturalTraitReviewerContext,
+    dto: RejectCulturalTraitDto,
+  ): Promise<CulturalTraitResponseDto> {
+    return this.review(
+      villageId,
+      culturalTraitId,
+      trustedReviewerContext,
+      VerificationStatus.REJECTED,
+      dto.reviewNote,
+    );
+  }
+
   private async getOrFail(
     villageId: string,
     culturalTraitId: string,
@@ -180,6 +216,38 @@ export class CulturalTraitService {
       );
     }
     return culturalTrait;
+  }
+
+  private async review(
+    villageId: string,
+    culturalTraitId: string,
+    trustedReviewerContext: CulturalTraitReviewerContext,
+    targetStatus: VerificationStatus,
+    reviewNote: string | null,
+  ): Promise<CulturalTraitResponseDto> {
+    const culturalTrait = await this.getOrFail(villageId, culturalTraitId);
+    assertTransition(culturalTrait.status, targetStatus);
+
+    const result = await this.culturalTraits.update(
+      {
+        id: culturalTraitId,
+        villageId,
+        status: culturalTrait.status,
+      },
+      {
+        status: targetStatus,
+        reviewedAt: new Date(),
+        reviewedById: trustedReviewerContext.reviewerId,
+        reviewNote,
+      },
+    );
+    if (result.affected !== 1) {
+      throw new ConflictException(
+        'Cultural trait status changed during review',
+      );
+    }
+
+    return this.toResponse(await this.getOrFail(villageId, culturalTraitId));
   }
 
   private async toResponse(

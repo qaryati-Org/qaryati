@@ -12,6 +12,7 @@ import { UsersModule } from './modules/users/users.module';
 import { VillageModule } from './modules/village/village.module';
 import { PopulationModule } from './modules/population/population.module';
 import { HistoryModule } from './modules/history/history.module';
+import { HeritageModule } from './modules/heritage/heritage.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { GeocodingModule } from './modules/geocoding/geocoding.module';
     UsersModule,
     PopulationModule,
     HistoryModule,
+    HeritageModule,
     GeocodingModule,
   ],
 })

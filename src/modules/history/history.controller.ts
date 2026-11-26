@@ -169,14 +169,13 @@ export class HistoryController {
   @ApiConflictResponse({
     description: 'The record cannot transition to VERIFIED',
   })
+  // Keep the decorated parameters for Nest's route binding and validation.
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   verify(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: VerifyHistoryRecordDto,
   ): Promise<HistoryRecordResponseDto> {
-    void villageId;
-    void id;
-    void dto;
     throw new UnauthorizedException(HISTORY_AUTH_UNAVAILABLE_MESSAGE);
   }
 
@@ -206,9 +205,7 @@ export class HistoryController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: RejectHistoryRecordDto,
   ): Promise<HistoryRecordResponseDto> {
-    void villageId;
-    void id;
-    void dto;
     throw new UnauthorizedException(HISTORY_AUTH_UNAVAILABLE_MESSAGE);
   }
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 }

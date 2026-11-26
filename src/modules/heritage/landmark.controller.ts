@@ -169,14 +169,13 @@ export class LandmarkController {
   @ApiConflictResponse({
     description: 'The landmark cannot transition to VERIFIED',
   })
+  // Keep the decorated parameters for Nest's route binding and validation.
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   verify(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: VerifyLandmarkDto,
   ): Promise<LandmarkResponseDto> {
-    void villageId;
-    void id;
-    void dto;
     throw new UnauthorizedException(LANDMARK_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
   }
 
@@ -206,9 +205,7 @@ export class LandmarkController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: RejectLandmarkDto,
   ): Promise<LandmarkResponseDto> {
-    void villageId;
-    void id;
-    void dto;
     throw new UnauthorizedException(LANDMARK_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
   }
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 }

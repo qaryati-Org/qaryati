@@ -55,7 +55,7 @@ flowchart TB
         SRC[source<br/>sources · verification rules]
         POP[population<br/>records · history]
         HIS[history<br/>overview · timeline]
-        HER[heritage]:::planned
+        HER[heritage<br/>landmarks]
     end
     subgraph Lina
         AUTH[auth<br/>roles · RolesGuard]
@@ -75,6 +75,8 @@ flowchart TB
     POP --> SRC
     HIS --> VIL
     HIS --> SRC
+    HER --> VIL
+    HER --> SRC
     USR --> AUTH
     GEOG -.-> GEO
     GEOG -.-> VIL
@@ -180,7 +182,7 @@ sequenceDiagram
 | API versioning | URI versioning, everything under `/api/v1` | [setup-app.ts](../src/setup-app.ts) |
 | Pagination | `page`, `limit` (max 100), `sort`, `order`, returns `{ data, meta }` | [common/pagination](../src/common/pagination) |
 | Status codes | `404` unknown resource in the URL · `422` unknown id in the body · `409` conflict with existing data | services |
-| Data provenance | Population and history records require a `sourceId`; sources are a shared module | `source` module |
+| Data provenance | Population, history and landmark records require a `sourceId`; sources are a shared module | `source` module |
 | Conflicting data | A different value from another source becomes a **new record**, never an overwrite. Records are `PENDING → VERIFIED / REJECTED`, with the reviewer and the date. Public lists show `VERIFIED` records by default. Only `PENDING` records can be edited, and a verified record cannot be deleted | [verification](../src/modules/source/verification) |
 | Authorization | Roles `ADMIN`, `EDITOR`, `VERIFIER`, `VIEWER`. Endpoints declare `@Roles(...)`; one global guard checks them. Review endpoints stay closed (`401`) until JWT login is integrated | `auth` module |
 | Native SQL | Used where a query is clearer or faster in SQL: village search (ranking across three name columns), population history (window function `LAG`) | `village-search.service.ts`, `population.service.ts` |

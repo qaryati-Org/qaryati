@@ -139,7 +139,7 @@ describe('PopulationController read access', () => {
         {
           provide: VillageService,
           useValue: {
-            findOne: jest.fn().mockResolvedValue({ id: VILLAGE_ID }),
+            ensureExists: jest.fn().mockResolvedValue({ id: VILLAGE_ID }),
           },
         },
         {

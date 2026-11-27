@@ -77,7 +77,7 @@ export class CulturalTraitService {
     }
 
     await this.villages.ensureExists(villageId);
-    
+
     const queryBuilder = this.culturalTraits
       .createQueryBuilder('culturalTrait')
       .where('culturalTrait.villageId = :villageId', { villageId })

@@ -245,7 +245,7 @@ export class PopulationService {
     villageId: string,
     query: PopulationConflictsQueryDto,
   ): Promise<Paginated<PopulationConflictGroupDto>> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
 
     const [result] = await this.dataSource.query<
       PopulationConflictsQueryResult[]

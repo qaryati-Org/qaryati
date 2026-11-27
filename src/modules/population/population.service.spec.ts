@@ -320,15 +320,15 @@ describe('PopulationService', () => {
 
       await service.conflicts(VILLAGE_ID, conflictsQueryDto());
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
-      expect(villages.findOne.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists.mock.invocationCallOrder[0]).toBeLessThan(
         dataSource.query.mock.invocationCallOrder[0],
       );
     });
 
     it('returns 404 for an unknown village without querying records', async () => {
       const error = new NotFoundException('Village not found');
-      villages.findOne.mockRejectedValueOnce(error);
+      villages.ensureExists.mockRejectedValueOnce(error);
 
       await expect(
         service.conflicts(VILLAGE_ID, conflictsQueryDto()),

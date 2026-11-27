@@ -43,6 +43,7 @@ describe('OpenAPI security (e2e)', () => {
     ['/api/v1/villages/{id}', 'patch'],
     ['/api/v1/sources', 'post'],
     ['/api/v1/villages/{villageId}/population-records/{id}/verify', 'post'],
+    ['/api/v1/villages/{villageId}/population-conflicts', 'get'],
     ['/api/v1/villages/{villageId}/history/{id}/reject', 'post'],
     ['/api/v1/villages/{villageId}/landmarks', 'post'],
     ['/api/v1/villages/{villageId}/cultural-traits/{id}', 'delete'],

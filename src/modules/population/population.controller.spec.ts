@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
@@ -14,7 +14,10 @@ import {
 import { Role } from '../auth';
 import { SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
-import { PopulationController } from './population.controller';
+import {
+  PopulationController,
+  PopulationHistoryController,
+} from './population.controller';
 import { PopulationService } from './population.service';
 import { PopulationRecord } from './entities/population-record.entity';
 
@@ -287,5 +290,94 @@ describe('PopulationController read access', () => {
         `/api/v1/villages/${OTHER_VILLAGE_ID}/population-records/${PENDING_ID}`,
       )
       .expect(404);
+  });
+});
+
+describe('PopulationHistoryController conflicts access', () => {
+  let app: INestApplication<App>;
+  let populationService: { conflicts: jest.Mock };
+
+  beforeEach(async () => {
+    populationService = {
+      conflicts: jest.fn().mockResolvedValue({
+        data: [],
+        meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
+      }),
+    };
+    const moduleRef = await Test.createTestingModule({
+      imports: [...AUTH_TESTING_IMPORTS],
+      controllers: [PopulationHistoryController],
+      providers: [
+        { provide: PopulationService, useValue: populationService },
+        ...AUTH_TESTING_PROVIDERS,
+      ],
+    }).compile();
+
+    app = moduleRef.createNestApplication<INestApplication<App>>();
+    setupApp(app);
+    await app.init();
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('requires an allowed role and delegates pagination', async () => {
+    const path = `/api/v1/villages/${VILLAGE_ID}/population-conflicts?page=2&limit=5`;
+
+    await request(app.getHttpServer()).get(path).expect(401);
+    await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', bearerFor(Role.VIEWER))
+      .set('x-role', Role.ADMIN)
+      .expect(403);
+
+    for (const role of [Role.EDITOR, Role.VERIFIER, Role.ADMIN]) {
+      await request(app.getHttpServer())
+        .get(path)
+        .set('Authorization', bearerFor(role))
+        .expect(200);
+    }
+
+    expect(populationService.conflicts).toHaveBeenLastCalledWith(
+      VILLAGE_ID,
+      expect.objectContaining({ page: 2, limit: 5 }),
+    );
+    expect(populationService.conflicts).toHaveBeenCalledTimes(3);
+  });
+
+  it('validates the village UUID and pagination parameters', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/villages/not-a-uuid/population-conflicts')
+      .set('Authorization', bearerFor(Role.ADMIN))
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`/api/v1/villages/${VILLAGE_ID}/population-conflicts?limit=101`)
+      .set('Authorization', bearerFor(Role.ADMIN))
+      .expect(400);
+
+    expect(populationService.conflicts).not.toHaveBeenCalled();
+  });
+
+  it('preserves the village-not-found response', async () => {
+    populationService.conflicts.mockRejectedValueOnce(
+      new NotFoundException('Village not found'),
+    );
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/villages/${VILLAGE_ID}/population-conflicts`)
+      .set('Authorization', bearerFor(Role.ADMIN))
+      .expect(404);
+  });
+
+  it('documents the required bearer security and error responses', () => {
+    const document = createOpenApiDocument(app);
+    const operation =
+      document.paths['/api/v1/villages/{villageId}/population-conflicts']?.get;
+
+    expect(operation?.security).toEqual([{ bearer: [] }]);
+    expect(operation?.responses).toHaveProperty('401');
+    expect(operation?.responses).toHaveProperty('403');
+    expect(operation?.responses).toHaveProperty('404');
   });
 });

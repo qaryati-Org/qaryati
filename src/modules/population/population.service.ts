@@ -16,6 +16,12 @@ import { Role } from '../auth';
 import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationConflictsQueryDto } from './dto/population-conflicts-query.dto';
+import {
+  PopulationConflictGroupDto,
+  PopulationConflictRecordDto,
+  PopulationConflictsQueryResult,
+} from './dto/population-conflicts-response.dto';
 import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
 import {
   PopulationHistoryQueryResult,
@@ -89,6 +95,54 @@ SELECT
         ORDER BY page."referenceYear" ASC, page.id ASC
       )
       FROM page
+    ),
+    '[]'::json
+  ) AS rows`;
+
+export const POPULATION_CONFLICTS_SQL = `
+WITH conflicting_years AS (
+  SELECT reference_year AS "referenceYear"
+  FROM population_records
+  WHERE village_id = $1
+  GROUP BY reference_year
+  HAVING COUNT(DISTINCT value) >= 2
+),
+page AS (
+  SELECT "referenceYear"
+  FROM conflicting_years
+  ORDER BY "referenceYear" ASC
+  LIMIT $2 OFFSET $3
+),
+conflicts AS (
+  SELECT
+    page."referenceYear",
+    json_agg(
+      json_build_object(
+        'id', record.id,
+        'sourceId', record.source_id,
+        'value', record.value,
+        'status', record.status
+      )
+      ORDER BY record.id ASC
+    ) AS records
+  FROM page
+  JOIN population_records record
+    ON record.village_id = $1
+   AND record.reference_year = page."referenceYear"
+  GROUP BY page."referenceYear"
+)
+SELECT
+  (SELECT COUNT(*)::int FROM conflicting_years) AS total,
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'referenceYear', conflicts."referenceYear",
+          'records', conflicts.records
+        )
+        ORDER BY conflicts."referenceYear" ASC
+      )
+      FROM conflicts
     ),
     '[]'::json
   ) AS rows`;
@@ -182,6 +236,51 @@ export class PopulationService {
         );
       }
       return PopulationHistoryResponseDto.from(row, source);
+    });
+
+    return paginate(data, Number(result.total), query);
+  }
+
+  async conflicts(
+    villageId: string,
+    query: PopulationConflictsQueryDto,
+  ): Promise<Paginated<PopulationConflictGroupDto>> {
+    await this.villages.findOne(villageId);
+
+    const [result] = await this.dataSource.query<
+      PopulationConflictsQueryResult[]
+    >(POPULATION_CONFLICTS_SQL, [villageId, query.limit, query.offset]);
+    if (!result) {
+      throw new InternalServerErrorException(
+        'Population conflicts query returned no result',
+      );
+    }
+    if (result.rows.length === 0) {
+      return paginate([], Number(result.total), query);
+    }
+
+    const sources = await this.sources.findByIds([
+      ...new Set(
+        result.rows.flatMap((group) =>
+          group.records.map((record) => record.sourceId),
+        ),
+      ),
+    ]);
+    const sourcesById = new Map(sources.map((source) => [source.id, source]));
+    const data = result.rows.map((group) => {
+      const records = group.records.map((record) => {
+        const source = sourcesById.get(record.sourceId);
+        if (!source) {
+          throw new InternalServerErrorException(
+            'Population conflicts contain a record with an unavailable source',
+          );
+        }
+        return PopulationConflictRecordDto.from(record, source);
+      });
+      return {
+        referenceYear: Number(group.referenceYear),
+        records,
+      };
     });
 
     return paginate(data, Number(result.total), query);

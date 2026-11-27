@@ -62,6 +62,7 @@ List endpoints return `{ data, meta }`, where `meta` contains `page`,
 | ---------------------------------------------------------------- | ------------------------------------------------ |
 | `GET /api/v1/villages/:villageId/population-records`             | Paginated records with status-based access       |
 | `GET /api/v1/villages/:villageId/population-records/:id`         | Get a record by ID with status-based access      |
+| `GET /api/v1/villages/:villageId/population-conflicts`           | Paginated conflict groups; role-protected     |
 | `POST /api/v1/villages/:villageId/population-records`            | Create a record; returns 201                     |
 | `PATCH /api/v1/villages/:villageId/population-records/:id`       | Update a PENDING record; returns 200             |
 | `DELETE /api/v1/villages/:villageId/population-records/:id`      | Delete a PENDING or REJECTED record; returns 204 |
@@ -107,6 +108,31 @@ updated. Status and review metadata are not client-editable.
 `createdAt`, and `updatedAt`. It does not embed a source object or expose
 entity relationships.
 
+### Population conflicts
+
+`GET /api/v1/villages/:villageId/population-conflicts` returns paginated
+conflict groups for a village. It requires a valid JWT with the `EDITOR`,
+`VERIFIER`, or `ADMIN` role; anonymous requests return `401`, and `VIEWER`
+requests return `403`. Roles come from the authenticated token, not request
+headers. The village UUID is validated, and an unknown village returns `404`.
+
+A reference year conflicts when the village has at least two distinct
+population values for that year. The query considers records in all
+verification statuses. For each conflicting year, the response includes all
+records for that year, with their IDs, values, statuses, source IDs, and
+nested source provenance (`id`, `title`, `type`, `author`, `url`, and `year`).
+Source provenance is loaded in one bulk lookup for the returned page.
+
+The response follows the standard `{ data, meta }` pagination envelope.
+Each `data` item contains a `referenceYear` and a `records` array; each
+record contains `id`, `sourceId`, `value`, `status`, and `source`. Pagination
+uses `page` (default `1`) and `limit` (default `20`, maximum `100`), with
+conflict years ordered by `referenceYear ASC` and records within a year by
+`id ASC`. Optional `sort` accepts only `referenceYear`, and `order` only
+accepts `asc`; the endpoint always uses this deterministic ordering.
+`meta.total` counts conflicting years, not population records.
+When no years conflict, `data` is empty and the pagination total is zero.
+
 ### Population history
 
 `GET /api/v1/villages/:villageId/population-history` returns the village's
@@ -134,8 +160,9 @@ error rather than returning incomplete provenance.
 Relevant HTTP responses include:
 
 - `400` for malformed UUIDs, invalid query or body fields, and a create or
-  update `referenceYear` later than the current year. The list `year` filter
-  may still specify any database-valid year through 2100.
+  update `referenceYear` later than the current year, including invalid
+  conflict pagination parameters. The list `year` filter may still specify
+  any database-valid year through 2100.
 - `404` for an unknown village or record, including a record requested under
   a different village path.
 - `409` for duplicate figures, a second VERIFIED observation for the same
@@ -184,6 +211,7 @@ an authenticated user with an explicitly allowed role:
 
 - PENDING/REJECTED list filters and lookups require `EDITOR`, `VERIFIER`, or
   `ADMIN`.
+- Population-conflict queries require `EDITOR`, `VERIFIER`, or `ADMIN`.
 - Create and update require `EDITOR` or `ADMIN`.
 - Delete requires `ADMIN`.
 - Verify and reject require `VERIFIER` or `ADMIN`.

@@ -17,6 +17,11 @@ docker compose up -d --build  # API on :3000, Postgres on :5433
 - Swagger UI: <http://localhost:3000/api/docs>
 - OpenAPI JSON (import into API-Dog): <http://localhost:3000/api/docs-json>
 
+Endpoints with a lock icon need an access token. Get one from
+`POST /api/v1/auth/login`, click **Authorize** in Swagger UI and paste the
+`accessToken`. Swagger UI then sends it to every locked endpoint. In API-Dog,
+set the auth type to Bearer Token.
+
 ### Local development (API outside Docker)
 
 ```bash

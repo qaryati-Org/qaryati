@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getDataSourceToken } from '@nestjs/typeorm';
 import { GEOCODING_PROVIDER } from '../geocoding/interfaces/geocoding.tokens';
 import { GeocodingModule } from '../geocoding/geocoding.module';
 import { VillageModule } from '../village/village.module';
@@ -22,10 +23,26 @@ class GeographyTestVillageModule {}
 })
 class GeographyTestGeocodingModule {}
 
+@Global()
+@Module({
+  providers: [
+    {
+      provide: getDataSourceToken(),
+      useValue: {
+        entityMetadatas: [],
+        options: { type: 'postgres' },
+        getRepository: jest.fn().mockReturnValue({}),
+      },
+    },
+  ],
+  exports: [getDataSourceToken()],
+})
+class GeographyTestDatabaseModule {}
+
 describe('GeographyModule', () => {
   it('compiles and resolves the service and controller', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [GeographyModule],
+      imports: [GeographyTestDatabaseModule, GeographyModule],
     })
       .overrideModule(VillageModule)
       .useModule(GeographyTestVillageModule)

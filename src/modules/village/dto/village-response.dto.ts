@@ -14,6 +14,10 @@ export class VillageResponseDto {
     description: 'Documented meaning or origin of the village name',
   })
   nameOrigin!: string | null;
+  @ApiProperty({ type: Number, nullable: true, minimum: -90, maximum: 90 })
+  latitude!: number | null;
+  @ApiProperty({ type: Number, nullable: true, minimum: -180, maximum: 180 })
+  longitude!: number | null;
   @ApiProperty({ type: GovernorateResponseDto })
   governorate!: GovernorateResponseDto;
   @ApiProperty({ type: MunicipalitySummaryDto, nullable: true })
@@ -25,6 +29,8 @@ export class VillageResponseDto {
       nameAr: village.nameAr,
       nameEn: village.nameEn,
       nameOrigin: village.nameOrigin,
+      latitude: village.latitude,
+      longitude: village.longitude,
       governorate: GovernorateResponseDto.from(village.governorate),
       municipality: village.municipality
         ? MunicipalitySummaryDto.from(village.municipality)

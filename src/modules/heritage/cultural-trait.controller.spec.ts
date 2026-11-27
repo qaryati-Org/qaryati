@@ -23,6 +23,7 @@ describe('CulturalTraitController with role enforcement', () => {
   let app: INestApplication<App>;
   let culturalTraitService: {
     list: jest.Mock;
+    findOne: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     remove: jest.Mock;
@@ -58,6 +59,9 @@ describe('CulturalTraitController with role enforcement', () => {
         data: [],
         meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
       }),
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ ...responseDto, status: 'VERIFIED' }),
       create: jest.fn().mockResolvedValue(responseDto),
       update: jest.fn().mockResolvedValue(responseDto),
       remove: jest.fn().mockResolvedValue(undefined),
@@ -94,6 +98,28 @@ describe('CulturalTraitController with role enforcement', () => {
       );
     },
   );
+
+  it('gets a cultural trait by ID and delegates both route parameters', async () => {
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}/${TRAIT_ID}`)
+      .expect(200);
+
+    expect(culturalTraitService.findOne).toHaveBeenCalledWith(
+      VILLAGE_ID,
+      TRAIT_ID,
+    );
+  });
+
+  it('rejects invalid UUIDs for the public cultural trait lookup', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/villages/not-a-uuid/cultural-traits/${TRAIT_ID}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}/not-a-uuid`)
+      .expect(400);
+
+    expect(culturalTraitService.findOne).not.toHaveBeenCalled();
+  });
 
   it('allows create, update, and delete with the expected HTTP status codes', async () => {
     await request(app.getHttpServer())

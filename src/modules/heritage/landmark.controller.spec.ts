@@ -23,6 +23,7 @@ describe('LandmarkController with role enforcement', () => {
   let app: INestApplication<App>;
   let landmarkService: {
     list: jest.Mock;
+    findOne: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     remove: jest.Mock;
@@ -58,6 +59,9 @@ describe('LandmarkController with role enforcement', () => {
         data: [],
         meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
       }),
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ ...responseDto, status: 'VERIFIED' }),
       create: jest.fn().mockResolvedValue(responseDto),
       update: jest.fn().mockResolvedValue(responseDto),
       remove: jest.fn().mockResolvedValue(undefined),
@@ -94,6 +98,28 @@ describe('LandmarkController with role enforcement', () => {
         limit: 5,
       }),
     );
+  });
+
+  it('gets a landmark by ID and delegates both route parameters', async () => {
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}/${LANDMARK_ID}`)
+      .expect(200);
+
+    expect(landmarkService.findOne).toHaveBeenCalledWith(
+      VILLAGE_ID,
+      LANDMARK_ID,
+    );
+  });
+
+  it('rejects invalid UUIDs for the public landmark lookup', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/villages/not-a-uuid/landmarks/${LANDMARK_ID}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}/not-a-uuid`)
+      .expect(400);
+
+    expect(landmarkService.findOne).not.toHaveBeenCalled();
   });
 
   it('allows create, update, and delete as ADMIN', async () => {

@@ -103,6 +103,24 @@ export class LandmarkService {
     return paginate(data, total, query);
   }
 
+  async findOne(
+    villageId: string,
+    landmarkId: string,
+  ): Promise<LandmarkResponseDto> {
+    await this.villages.findOne(villageId);
+    const landmark = await this.landmarks.findOneBy({
+      id: landmarkId,
+      villageId,
+      status: VerificationStatus.VERIFIED,
+    });
+    if (!landmark) {
+      throw new NotFoundException(
+        `Landmark ${landmarkId} not found for village ${villageId}`,
+      );
+    }
+    return this.toResponse(landmark);
+  }
+
   async update(
     villageId: string,
     landmarkId: string,

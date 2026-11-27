@@ -105,6 +105,24 @@ export class HistoryService {
     return paginate(data, total, query);
   }
 
+  async findOne(
+    villageId: string,
+    recordId: string,
+  ): Promise<HistoryRecordResponseDto> {
+    await this.villages.findOne(villageId);
+    const record = await this.historyRecords.findOneBy({
+      id: recordId,
+      villageId,
+      status: VerificationStatus.VERIFIED,
+    });
+    if (!record) {
+      throw new NotFoundException(
+        `History record ${recordId} not found for village ${villageId}`,
+      );
+    }
+    return this.toResponse(record);
+  }
+
   async update(
     villageId: string,
     recordId: string,

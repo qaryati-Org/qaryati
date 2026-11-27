@@ -105,6 +105,24 @@ export class CulturalTraitService {
     return paginate(data, total, query);
   }
 
+  async findOne(
+    villageId: string,
+    culturalTraitId: string,
+  ): Promise<CulturalTraitResponseDto> {
+    await this.villages.findOne(villageId);
+    const culturalTrait = await this.culturalTraits.findOneBy({
+      id: culturalTraitId,
+      villageId,
+      status: VerificationStatus.VERIFIED,
+    });
+    if (!culturalTrait) {
+      throw new NotFoundException(
+        `Cultural trait ${culturalTraitId} not found for village ${villageId}`,
+      );
+    }
+    return this.toResponse(culturalTrait);
+  }
+
   async update(
     villageId: string,
     culturalTraitId: string,

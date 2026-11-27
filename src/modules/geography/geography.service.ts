@@ -15,7 +15,7 @@ import { VillageResponseDto } from '../village/dto/village-response.dto';
 import { Village } from '../village/entities/village.entity';
 import { VillageService } from '../village/village.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 
 const HAVERSINE_DISTANCE_KM = `
   2 * 6371 * ASIN(
@@ -68,10 +68,18 @@ export class GeographyService {
       );
     }
 
-    return this.villageService.update(id, {
-      latitude: result.latitude,
-      longitude: result.longitude,
-    });
+    const updateResult = await this.villages.update(
+      { id, latitude: IsNull(), longitude: IsNull() },
+      { latitude: result.latitude, longitude: result.longitude },
+    );
+
+    if (updateResult.affected !== 1) {
+      throw new ConflictException(
+        `Village ${id} coordinates changed while geocoding`,
+      );
+    }
+
+    return this.villageService.findOne(id);
   }
 
   async findNearbyVillages(

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { IsNull } from 'typeorm';
 import { GEOCODING_PROVIDER } from '../geocoding/interfaces/geocoding.tokens';
 import type { GeocodingProvider } from '../geocoding/interfaces/geocoding-provider.interface';
 import { VillageResponseDto } from '../village/dto/village-response.dto';
@@ -40,7 +41,10 @@ describe('GeographyService', () => {
   };
   let geocodingProvider: jest.Mocked<GeocodingProvider>;
   let geocodeMock: jest.Mock;
-  let villageRepository: { createQueryBuilder: jest.Mock };
+  let villageRepository: {
+    createQueryBuilder: jest.Mock;
+    update: jest.Mock;
+  };
   let nearbyQueryBuilder: {
     select: jest.Mock;
     addSelect: jest.Mock;
@@ -72,6 +76,7 @@ describe('GeographyService', () => {
     };
     villageRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(nearbyQueryBuilder),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
 
     moduleRef = await Test.createTestingModule({
@@ -96,34 +101,63 @@ describe('GeographyService', () => {
       latitude: 32.2211,
       longitude: 35.2544,
     });
-    villageService.findOne.mockResolvedValue(village);
+    villageService.findOne
+      .mockResolvedValueOnce(village)
+      .mockResolvedValueOnce(updatedVillage);
     geocodingProvider.geocode.mockResolvedValue({
       latitude: 32.2211,
       longitude: 35.2544,
       displayName: 'Burqa, Nablus, Palestine',
     });
-    villageService.update.mockResolvedValue(updatedVillage);
 
     await expect(service.geocodeVillage(VILLAGE_ID)).resolves.toBe(
       updatedVillage,
     );
 
-    expect(villageService.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+    expect(villageService.findOne).toHaveBeenNthCalledWith(1, VILLAGE_ID);
     expect(geocodeMock).toHaveBeenCalledWith('Burqa, Nablus, Palestine');
-    expect(villageService.update).toHaveBeenCalledWith(VILLAGE_ID, {
+    expect(villageRepository.update).toHaveBeenCalledTimes(1);
+    expect(villageRepository.update).toHaveBeenCalledWith(
+      { id: VILLAGE_ID, latitude: IsNull(), longitude: IsNull() },
+      { latitude: 32.2211, longitude: 35.2544 },
+    );
+    expect(villageService.findOne).toHaveBeenNthCalledWith(2, VILLAGE_ID);
+    expect(villageService.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects when another request sets coordinates first', async () => {
+    villageService.findOne.mockResolvedValue(villageResponse());
+    geocodingProvider.geocode.mockResolvedValue({
       latitude: 32.2211,
       longitude: 35.2544,
+      displayName: 'Burqa, Nablus, Palestine',
     });
+    villageRepository.update.mockResolvedValue({ affected: 0 });
+
+    await expect(service.geocodeVillage(VILLAGE_ID)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+
+    expect(villageRepository.update).toHaveBeenCalledTimes(1);
+    expect(villageService.findOne).toHaveBeenCalledTimes(1);
+    expect(villageService.update).not.toHaveBeenCalled();
   });
 
   it('uses the Arabic village name when the English name is null', async () => {
-    villageService.findOne.mockResolvedValue(villageResponse({ nameEn: null }));
+    villageService.findOne
+      .mockResolvedValueOnce(villageResponse({ nameEn: null }))
+      .mockResolvedValueOnce(
+        villageResponse({
+          nameEn: null,
+          latitude: 32.2211,
+          longitude: 35.2544,
+        }),
+      );
     geocodingProvider.geocode.mockResolvedValue({
       latitude: 32.2211,
       longitude: 35.2544,
       displayName: 'برقة, Nablus, Palestine',
     });
-    villageService.update.mockResolvedValue(villageResponse());
 
     await service.geocodeVillage(VILLAGE_ID);
 
@@ -140,6 +174,7 @@ describe('GeographyService', () => {
     );
 
     expect(geocodeMock).not.toHaveBeenCalled();
+    expect(villageRepository.update).not.toHaveBeenCalled();
     expect(villageService.update).not.toHaveBeenCalled();
   });
 
@@ -153,6 +188,7 @@ describe('GeographyService', () => {
     );
 
     expect(geocodeMock).not.toHaveBeenCalled();
+    expect(villageRepository.update).not.toHaveBeenCalled();
     expect(villageService.update).not.toHaveBeenCalled();
   });
 
@@ -167,6 +203,7 @@ describe('GeographyService', () => {
 
     expect(geocodeMock).not.toHaveBeenCalled();
     expect(villageService.update).not.toHaveBeenCalled();
+    expect(villageRepository.update).not.toHaveBeenCalled();
   });
 
   it('rejects when geocoding does not resolve a location', async () => {
@@ -177,6 +214,7 @@ describe('GeographyService', () => {
       UnprocessableEntityException,
     );
 
+    expect(villageRepository.update).not.toHaveBeenCalled();
     expect(villageService.update).not.toHaveBeenCalled();
   });
 
@@ -187,6 +225,7 @@ describe('GeographyService', () => {
     await expect(service.geocodeVillage(VILLAGE_ID)).rejects.toBe(error);
 
     expect(geocodeMock).not.toHaveBeenCalled();
+    expect(villageRepository.update).not.toHaveBeenCalled();
   });
 
   it('propagates unexpected geocoding provider errors', async () => {
@@ -196,6 +235,7 @@ describe('GeographyService', () => {
 
     await expect(service.geocodeVillage(VILLAGE_ID)).rejects.toBe(error);
 
+    expect(villageRepository.update).not.toHaveBeenCalled();
     expect(villageService.update).not.toHaveBeenCalled();
   });
 

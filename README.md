@@ -176,6 +176,20 @@ src/
 Details, configuration and test helpers: [docs/auth.md](docs/auth.md).
 Design decisions: [ADR-002](docs/adr/002-auth-and-token-strategy.md).
 
+## Audit log
+
+- Every insert, update and delete of village data and users is recorded in
+  `audit_logs`: who (`actorId`), which record, values before and after,
+  changed columns, when, and the request's correlation id.
+- Recorded by database triggers, so it covers every write path, including
+  raw SQL. Password hashes are never stored.
+- `GET /api/v1/audit-logs` (`ADMIN` only) with filters `tableName`,
+  `recordId`, `actorId`, `action`, `from`, `to`; newest first.
+
+Details: [docs/audit.md](docs/audit.md). Design decision:
+[ADR-005](docs/adr/005-audit-log-with-database-triggers.md). Cost:
+[docs/performance/audit.md](docs/performance/audit.md).
+
 ## Population data rules
 
 - A population value of `0` is valid and represents a documented depopulated

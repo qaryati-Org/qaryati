@@ -60,7 +60,7 @@ flowchart TB
     subgraph Lina
         AUTH[auth<br/>JWT login · roles · guards]
         USR[users]
-        AUD[audit log]:::planned
+        AUD[audit<br/>audit_logs · triggers]
     end
     subgraph Yahya
         GEO[geocoding<br/>Nominatim provider]
@@ -78,6 +78,7 @@ flowchart TB
     HER --> VIL
     HER --> SRC
     AUTH --> USR
+    AUD --> AUTH
     GEOG --> GEO
     GEOG --> VIL
 
@@ -186,6 +187,7 @@ sequenceDiagram
 | Data provenance | Population, history, landmark and cultural trait records require a `sourceId`; sources are a shared module | `source` module |
 | Conflicting data | A different value from another source becomes a **new record**, never an overwrite. Records are `PENDING → VERIFIED / REJECTED`, with the reviewer and the date. Public lists show `VERIFIED` records by default. Only `PENDING` records can be edited, and a verified record cannot be deleted | [verification](../src/modules/source/verification) |
 | Authentication | JWT access token (15 min) + rotated, single-use refresh token (7 days, stored hashed); argon2id passwords; login and register rate limited per IP | `auth` module, [ADR-002](adr/002-auth-and-token-strategy.md), [auth.md](auth.md) |
+| Audit log | Database triggers record every insert, update and delete of village data and users (before, after, changed columns); the API passes the caller and correlation id to PostgreSQL before each write. `GET /audit-logs` for admins | `audit` module, [ADR-005](adr/005-audit-log-with-database-triggers.md), [audit.md](audit.md) |
 | Authorization | Roles `ADMIN`, `EDITOR`, `VERIFIER`, `VIEWER`. Endpoints declare `@Roles(...)`; global guards return `401` without a token and `403` for a role that is not listed. Reviewers are taken from the token | `auth` module |
 | Native SQL | Used where a query is clearer or faster in SQL: village search (ranking across three name columns), population history (window function `LAG`), nearby villages (haversine distance in SQL) | `village-search.service.ts`, `population.service.ts`, `geography.service.ts` |
 | Search performance | GIN trigram indexes on normalized names; p95 470 ms → 22 ms under load | [performance/search.md](performance/search.md) |

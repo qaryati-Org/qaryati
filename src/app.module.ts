@@ -9,6 +9,7 @@ import { HealthModule } from './health/health.module';
 import { SourceModule } from './modules/source/source.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { VillageModule } from './modules/village/village.module';
 import { PopulationModule } from './modules/population/population.module';
 import { HistoryModule } from './modules/history/history.module';
@@ -35,6 +36,7 @@ import { GeographyModule } from './modules/geography/geography.module';
     SourceModule,
     AuthModule,
     UsersModule,
+    AuditModule,
     PopulationModule,
     HistoryModule,
     HeritageModule,

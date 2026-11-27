@@ -1,8 +1,8 @@
 # ADR-003: Conflict Handling and Data Provenance
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-27
-- **Deciders:** Qaryati team (confirmation pending)
+- **Deciders:** Rashad, Lina, Ahmad, Yahya
 
 ## Context
 

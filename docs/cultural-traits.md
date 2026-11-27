@@ -15,11 +15,16 @@ All routes use the `/api/v1` prefix. Village and trait IDs are UUIDs.
 | Method and route | Behavior |
 | --- | --- |
 | `GET /villages/:villageId/cultural-traits` | Public, paginated list of VERIFIED traits |
+| `GET /villages/:villageId/cultural-traits/:id` | Public lookup of a VERIFIED trait; returns 200 |
 | `POST /villages/:villageId/cultural-traits` | Create a trait; returns 201 |
 | `PATCH /villages/:villageId/cultural-traits/:id` | Update a PENDING trait; returns 200 |
 | `DELETE /villages/:villageId/cultural-traits/:id` | Delete a PENDING or REJECTED trait; returns 204 |
-| `POST /villages/:villageId/cultural-traits/:id/verify` | Currently returns 401 |
-| `POST /villages/:villageId/cultural-traits/:id/reject` | Currently returns 401 |
+| `POST /villages/:villageId/cultural-traits/:id/verify` | Verify a trait; returns 200 |
+| `POST /villages/:villageId/cultural-traits/:id/reject` | Reject a trait; returns 200 |
+
+The GET-by-ID route returns only VERIFIED traits. Invalid village or trait
+UUIDs return 400; an unknown village, missing record, record from another
+village, or PENDING or REJECTED trait returns 404.
 
 Create requires `name` (non-whitespace, up to 255 characters), `type`, a
 non-whitespace `description` (up to 10,000 characters), and UUID `sourceId`.
@@ -28,9 +33,8 @@ review metadata.
 
 Update accepts any subset of `name`, `type`, `description`, and `sourceId`.
 Explicit `null` values and status or review metadata are not accepted. The
-review DTOs define an optional `reviewNote` for verification and a required
-non-whitespace `reviewNote` for rejection, each limited to 1,000 characters;
-the HTTP review handlers return 401 before using these bodies.
+verify DTO accepts an optional `reviewNote`; the reject DTO requires a
+non-whitespace `reviewNote`. Both are limited to 1,000 characters.
 
 Listing accepts an optional `type`, plus `page` (default 1) and `limit`
 (default 20, maximum 100). Results are ordered by `name ASC`, then `id ASC`;
@@ -61,10 +65,15 @@ cannot be edited or deleted; PENDING and REJECTED traits can be deleted.
 Review updates store the new status, server-set `reviewedAt`, trusted
 `reviewedById`, and `reviewNote` together.
 
-The global `RolesGuard` is currently permissive. Create, update, and delete
-have `@Roles` metadata, but those roles are not enforced; these routes are
-reachable without authentication. The verify and reject HTTP routes
-deliberately fail closed with 401 until trusted authentication is implemented.
+Create and update require `EDITOR` or `ADMIN`; delete requires `ADMIN`.
+Verify and reject require `VERIFIER` or `ADMIN` and return `200` on success.
+Protected write and review routes return `401` when the access token is
+missing or invalid, and `403` when an authenticated user does not have an
+allowed role. Public GET routes do not require a token; a malformed or invalid
+bearer token is still rejected with `401`.
+
+The review controller derives the reviewer ID from the authenticated user.
+Client-supplied `reviewerId` or `reviewedById` values are not accepted.
 
 ## Tests
 

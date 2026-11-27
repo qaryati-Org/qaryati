@@ -88,6 +88,22 @@ export class CulturalTraitController {
     return this.culturalTraitService.list(villageId, query);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a verified cultural trait' })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Cultural Trait UUID' })
+  @ApiOkResponse({ type: CulturalTraitResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid village or record ID' })
+  @ApiNotFoundResponse({
+    description: 'Village or verified cultural trait not found',
+  })
+  findOne(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<CulturalTraitResponseDto> {
+    return this.culturalTraitService.findOne(villageId, id);
+  }
+
   @Post()
   @Roles(Role.EDITOR, Role.ADMIN)
   @ApiOperation({

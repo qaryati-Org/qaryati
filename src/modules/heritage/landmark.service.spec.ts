@@ -320,6 +320,95 @@ describe('LandmarkService', () => {
     });
   });
 
+  describe('findOne', () => {
+    it('returns a VERIFIED landmark with source provenance', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        landmark({ status: VerificationStatus.VERIFIED }),
+      );
+
+      const result = await service.findOne(VILLAGE_ID, LANDMARK_ID);
+
+      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: LANDMARK_ID,
+        villageId: VILLAGE_ID,
+        status: VerificationStatus.VERIFIED,
+      });
+      expect(result).toMatchObject({
+        id: LANDMARK_ID,
+        status: VerificationStatus.VERIFIED,
+        source: { id: SOURCE_ID, title: `Source ${SOURCE_ID}` },
+      });
+    });
+
+    it('returns 404 when the landmark does not exist', async () => {
+      await expect(
+        service.findOne(VILLAGE_ID, LANDMARK_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns 404 when the landmark belongs to another village', async () => {
+      repository.findOneBy.mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOne(VILLAGE_ID, LANDMARK_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: LANDMARK_ID,
+        villageId: VILLAGE_ID,
+        status: VerificationStatus.VERIFIED,
+      });
+    });
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'returns 404 for a %s landmark',
+      async (status) => {
+        const unverifiedLandmark = landmark({ status });
+        repository.findOneBy.mockImplementationOnce(
+          (criteria: Partial<Landmark>) =>
+            Promise.resolve(
+              unverifiedLandmark.id === criteria.id &&
+                unverifiedLandmark.villageId === criteria.villageId &&
+                unverifiedLandmark.status === criteria.status
+                ? unverifiedLandmark
+                : null,
+            ),
+        );
+
+        await expect(
+          service.findOne(VILLAGE_ID, LANDMARK_ID),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(repository.findOneBy).toHaveBeenCalledWith({
+          id: LANDMARK_ID,
+          villageId: VILLAGE_ID,
+          status: VerificationStatus.VERIFIED,
+        });
+      },
+    );
+
+    it('preserves village-not-found behavior', async () => {
+      villages.findOne.mockRejectedValueOnce(
+        new NotFoundException('Village not found'),
+      );
+
+      await expect(service.findOne(VILLAGE_ID, LANDMARK_ID)).rejects.toThrow(
+        'Village not found',
+      );
+      expect(repository.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it('preserves the unavailable-source error', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        landmark({ status: VerificationStatus.VERIFIED }),
+      );
+      sources.findByIds.mockResolvedValueOnce([]);
+
+      await expect(
+        service.findOne(VILLAGE_ID, LANDMARK_ID),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+  });
+
   describe('update', () => {
     it('updates only supplied fields for a PENDING landmark without changing review metadata', async () => {
       const original = landmark({

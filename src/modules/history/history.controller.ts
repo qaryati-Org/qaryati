@@ -87,6 +87,22 @@ export class HistoryController {
     return this.historyService.list(villageId, query);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a verified history record' })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'History record UUID' })
+  @ApiOkResponse({ type: HistoryRecordResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid village or record ID' })
+  @ApiNotFoundResponse({
+    description: 'Village or verified history record not found',
+  })
+  findOne(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<HistoryRecordResponseDto> {
+    return this.historyService.findOne(villageId, id);
+  }
+
   @Post()
   @Roles(Role.EDITOR, Role.ADMIN)
   @ApiOperation({ summary: 'Create a history record' })

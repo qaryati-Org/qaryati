@@ -362,7 +362,7 @@ async function removeFixtureSource(
   manager: EntityManager,
   source: FixtureSource,
 ): Promise<boolean> {
-  const rows = await manager.query<{ id: string }[]>(
+  const result = await manager.query<[{ id: string }[], number]>(
     `DELETE FROM sources AS s
      WHERE s.id = $1
        AND s.title = $2
@@ -388,7 +388,7 @@ async function removeFixtureSource(
      RETURNING s.id`,
     [source.id, source.title, source.type, source.author, source.year],
   );
-  return rows.length === 1;
+  return result[1] === 1;
 }
 
 async function clearFixture(): Promise<void> {

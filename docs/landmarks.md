@@ -16,11 +16,16 @@ All routes are under `/api/v1`; village and landmark IDs are UUIDs.
 | Method and route | Behavior |
 | --- | --- |
 | `GET /villages/:villageId/landmarks` | Public, paginated list of VERIFIED landmarks |
+| `GET /villages/:villageId/landmarks/:id` | Public lookup of a VERIFIED landmark; returns 200 |
 | `POST /villages/:villageId/landmarks` | Create a landmark; returns 201 |
 | `PATCH /villages/:villageId/landmarks/:id` | Update a PENDING landmark; returns 200 |
 | `DELETE /villages/:villageId/landmarks/:id` | Delete a PENDING or REJECTED landmark; returns 204 |
-| `POST /villages/:villageId/landmarks/:id/verify` | Currently returns 401 |
-| `POST /villages/:villageId/landmarks/:id/reject` | Currently returns 401 |
+| `POST /villages/:villageId/landmarks/:id/verify` | Verify a landmark; returns 200 |
+| `POST /villages/:villageId/landmarks/:id/reject` | Reject a landmark; returns 200 |
+
+The GET-by-ID route returns only VERIFIED landmarks. Invalid village or
+landmark UUIDs return 400; an unknown village, missing record, record from
+another village, or PENDING or REJECTED record returns 404.
 
 Create requires `name` (non-whitespace, up to 255 characters), `type`,
 `description` (non-whitespace, up to 10,000 characters), and UUID `sourceId`.
@@ -29,9 +34,8 @@ review metadata.
 
 Update accepts any subset of `name`, `type`, `description`, and `sourceId`.
 Explicit `null` values and status or review metadata are not accepted.
-The review DTOs define an optional `reviewNote` for verification and a required,
-non-whitespace `reviewNote` for rejection (both are limited to 1,000
-characters); the HTTP handlers currently return 401 before using these bodies.
+The verify DTO accepts an optional `reviewNote`; the reject DTO requires a
+non-whitespace `reviewNote`. Both are limited to 1,000 characters.
 
 Listing accepts an optional `type`, plus `page` (default 1) and `limit`
 (default 20, maximum 100). Sorting is fixed to `name ASC`, then `id ASC`;
@@ -58,13 +62,16 @@ deleted; PENDING and REJECTED records can be deleted.
 
 The service implements verify and reject with a conditional status update and
 stores `status`, server-set `reviewedAt`, trusted `reviewedById`, and
-`reviewNote` together. The HTTP review routes remain guarded and return 401
-until trusted authentication is implemented.
+`reviewNote` together. The verify and reject routes require `VERIFIER` or
+`ADMIN` and return `200` on success. The controller derives the reviewer ID
+from the authenticated user; client-supplied `reviewerId` or `reviewedById`
+values are not accepted.
 
-Create, update, and delete currently have `@Roles` metadata, but the global
-`RolesGuard` is permissive and does not enforce it. Those HTTP routes are
-reachable without authentication. This is a current authorization limitation,
-not a secure permission check.
+Create and update require `EDITOR` or `ADMIN`; delete requires `ADMIN`.
+Protected write and review routes return `401` when the access token is
+missing or invalid, and `403` when an authenticated user does not have an
+allowed role. Public GET routes do not require a token; a malformed or invalid
+bearer token is still rejected with `401`.
 
 ## Tests
 

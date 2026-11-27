@@ -7,7 +7,6 @@ import {
   PopulationController,
   PopulationHistoryController,
 } from './population.controller';
-import { PopulationReviewAuthenticationGuard } from './population-review-auth.guard';
 import { PopulationService } from './population.service';
 
 @Module({
@@ -17,7 +16,7 @@ import { PopulationService } from './population.service';
     SourceModule,
   ],
   controllers: [PopulationController, PopulationHistoryController],
-  providers: [PopulationService, PopulationReviewAuthenticationGuard],
+  providers: [PopulationService],
   exports: [PopulationService],
 })
 export class PopulationModule {}

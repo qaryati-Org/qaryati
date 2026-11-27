@@ -15,6 +15,7 @@ import {
 import { SourceService } from '../src/modules/source/source.service';
 import { VerificationStatus } from '../src/modules/source/verification/verification-status.enum';
 import { UsersService } from '../src/modules/users/users.service';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 const fixtureToken = randomUUID();
@@ -80,11 +81,14 @@ describe('Cultural Trait module (e2e)', () => {
   const culturalTraitsPath = (villageId = fixtureIds.village) =>
     `/api/v1/villages/${villageId}/cultural-traits`;
 
+  let admin: TestCaller;
+
+  // Write endpoints need a token; ADMIN is allowed on all of them.
   const http = () => {
     if (!app) {
       throw new Error('The Cultural Trait test application is not initialized');
     }
-    return request(app.getHttpServer());
+    return httpAs(app, admin);
   };
 
   const insertCulturalTrait = async (
@@ -154,6 +158,7 @@ describe('Cultural Trait module (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    admin = await callerWithRole(app, Role.ADMIN);
     dataSource = app.get(DataSource);
     culturalTraitService = app.get(CulturalTraitService);
 
@@ -573,36 +578,91 @@ describe('Cultural Trait module (e2e)', () => {
     await http().delete(`${culturalTraitsPath()}/${randomUUID()}`).expect(404);
   });
 
-  it('blocks forged HTTP review requests without changing records', async () => {
-    const id = await insertCulturalTrait();
-    const before = await readCulturalTrait(id);
+  describe('HTTP review endpoints', () => {
+    const reviewNote = { reviewNote: 'Checked against the source' };
+    let verifier: TestCaller;
+    let viewer: TestCaller;
+    let editor: TestCaller;
 
-    await http()
-      .post(`${culturalTraitsPath()}/${id}/verify`)
-      .set('x-user-id', reviewerId!)
-      .set('x-role', 'ADMIN')
-      .send({
-        reviewerId,
-        reviewedById: reviewerId,
-        reviewedAt: new Date().toISOString(),
+    beforeAll(async () => {
+      verifier = await callerWithRole(app!, Role.VERIFIER);
+      viewer = await callerWithRole(app!, Role.VIEWER);
+      editor = await callerWithRole(app!, Role.EDITOR);
+    });
+
+    it('returns 401 without a token, ignoring forged identity headers', async () => {
+      const id = await insertCulturalTrait();
+      const before = await readCulturalTrait(id);
+      for (const action of ['verify', 'reject']) {
+        await request(app!.getHttpServer())
+          .post(`${culturalTraitsPath()}/${id}/${action}`)
+          .set('x-user-id', verifier.userId)
+          .set('x-role', 'ADMIN')
+          .send(reviewNote)
+          .expect(401);
+      }
+      expect(await readCulturalTrait(id)).toEqual(before);
+    });
+
+    it('returns 403 for VIEWER and EDITOR without changing the record', async () => {
+      const id = await insertCulturalTrait();
+      const before = await readCulturalTrait(id);
+      for (const caller of [viewer, editor]) {
+        for (const action of ['verify', 'reject']) {
+          await httpAs(app!, caller)
+            .post(`${culturalTraitsPath()}/${id}/${action}`)
+            .send(reviewNote)
+            .expect(403);
+        }
+      }
+      expect(await readCulturalTrait(id)).toEqual(before);
+    });
+
+    it('rejects forged reviewer fields in the body', async () => {
+      const id = await insertCulturalTrait();
+      const before = await readCulturalTrait(id);
+      await httpAs(app!, verifier)
+        .post(`${culturalTraitsPath()}/${id}/verify`)
+        .send({
+          ...reviewNote,
+          reviewerId: viewer.userId,
+          reviewedById: viewer.userId,
+          status: VerificationStatus.VERIFIED,
+        })
+        .expect(400);
+      expect(await readCulturalTrait(id)).toEqual(before);
+    });
+
+    it('verifies as VERIFIER and records the caller as reviewer', async () => {
+      const id = await insertCulturalTrait();
+      const res = await httpAs(app!, verifier)
+        .post(`${culturalTraitsPath()}/${id}/verify`)
+        .send(reviewNote)
+        .expect(200);
+      expect(res.body).toMatchObject({
         status: VerificationStatus.VERIFIED,
-        role: 'ADMIN',
-      })
-      .expect(401);
-    await http()
-      .post(`${culturalTraitsPath()}/${id}/reject`)
-      .set('x-user-id', reviewerId!)
-      .set('x-role', 'ADMIN')
-      .send({
-        reviewerId,
-        reviewedById: reviewerId,
-        reviewedAt: new Date().toISOString(),
-        status: VerificationStatus.REJECTED,
-        role: 'ADMIN',
-        reviewNote: 'Forged review',
-      })
-      .expect(401);
+        reviewedById: verifier.userId,
+      });
+      expect(await readCulturalTrait(id)).toMatchObject({
+        status: VerificationStatus.VERIFIED,
+        reviewed_by_id: verifier.userId,
+      });
+    });
 
-    expect(await readCulturalTrait(id)).toEqual(before);
+    it('rejects as ADMIN and records the caller as reviewer', async () => {
+      const id = await insertCulturalTrait();
+      const res = await http()
+        .post(`${culturalTraitsPath()}/${id}/reject`)
+        .send(reviewNote)
+        .expect(200);
+      expect(res.body).toMatchObject({
+        status: VerificationStatus.REJECTED,
+        reviewedById: admin.userId,
+      });
+      expect(await readCulturalTrait(id)).toMatchObject({
+        status: VerificationStatus.REJECTED,
+        reviewed_by_id: admin.userId,
+      });
+    });
   });
 });

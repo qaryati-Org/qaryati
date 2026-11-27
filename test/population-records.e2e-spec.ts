@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
+import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { Role } from '../src/modules/auth/enums/role.enum';
@@ -42,6 +43,9 @@ describe('Population records (e2e)', () => {
   };
 
   let admin: TestCaller;
+  let viewer: TestCaller;
+  let editor: TestCaller;
+  let verifier: TestCaller;
 
   // Write endpoints need a token; ADMIN is allowed on all of them.
   const http = () => {
@@ -53,6 +57,9 @@ describe('Population records (e2e)', () => {
 
   const recordsPath = (villageId: string = fixtureIds.village) =>
     `/api/v1/villages/${villageId}/population-records`;
+
+  const conflictsPath = (villageId: string = fixtureIds.village) =>
+    `/api/v1/villages/${villageId}/population-conflicts`;
 
   const trackRecordId = (body: unknown): string => {
     if (
@@ -139,7 +146,12 @@ describe('Population records (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
-    admin = await callerWithRole(app, Role.ADMIN);
+    [viewer, editor, verifier, admin] = await Promise.all([
+      callerWithRole(app, Role.VIEWER),
+      callerWithRole(app, Role.EDITOR),
+      callerWithRole(app, Role.VERIFIER),
+      callerWithRole(app, Role.ADMIN),
+    ]);
     dataSource = app.get(DataSource);
     await cleanupFixtures();
 
@@ -463,26 +475,83 @@ describe('Population records (e2e)', () => {
       expect(response.body.meta).toHaveProperty('totalPages');
     });
 
-    it('filters for PENDING status when requested', async () => {
-      const response = await http()
-        .get(`${recordsPath()}?status=PENDING`)
+    it('keeps the default and explicit VERIFIED listing public', async () => {
+      const anonymousDefault = await request(app!.getHttpServer())
+        .get(recordsPath())
+        .expect(200);
+      const viewerDefault = await httpAs(app!, viewer)
+        .get(recordsPath())
+        .expect(200);
+      const anonymousVerified = await request(app!.getHttpServer())
+        .get(`${recordsPath()}?status=VERIFIED`)
+        .expect(200);
+      const viewerVerified = await httpAs(app!, viewer)
+        .get(`${recordsPath()}?status=VERIFIED`)
         .expect(200);
 
-      expect(
-        response.body.data.map((record: { value: number }) => record.value),
-      ).toEqual([1350]);
-      expect(response.body.data[0].status).toBe('PENDING');
+      for (const response of [
+        anonymousDefault,
+        viewerDefault,
+        anonymousVerified,
+        viewerVerified,
+      ]) {
+        expect(
+          response.body.data.map((record: { status: string }) => record.status),
+        ).toEqual(['VERIFIED', 'VERIFIED', 'VERIFIED']);
+      }
     });
 
-    it('filters for REJECTED status when requested', async () => {
-      const response = await http()
-        .get(`${recordsPath()}?status=REJECTED`)
+    it.each(['PENDING', 'REJECTED'] as const)(
+      'restricts explicit %s listing to EDITOR, VERIFIER, and ADMIN',
+      async (status) => {
+        await request(app!.getHttpServer())
+          .get(`${recordsPath()}?status=${status}`)
+          .expect(401);
+        await request(app!.getHttpServer())
+          .get(`${recordsPath()}?status=${status}`)
+          .set('x-user-id', admin.userId)
+          .set('x-role', 'ADMIN')
+          .expect(401);
+        await httpAs(app!, viewer)
+          .get(`${recordsPath()}?status=${status}`)
+          .expect(403);
+        await httpAs(app!, viewer)
+          .get(`${recordsPath()}?status=${status}`)
+          .set('x-role', 'ADMIN')
+          .expect(403);
+
+        for (const caller of [editor, verifier, admin]) {
+          const response = await httpAs(app!, caller)
+            .get(`${recordsPath()}?status=${status}`)
+            .expect(200);
+          expect(response.body.data).toHaveLength(1);
+          expect(response.body.data[0].status).toBe(status);
+          expect(response.body.data[0].value).toBe(
+            status === 'PENDING' ? 1350 : 900,
+          );
+        }
+      },
+    );
+
+    it('preserves filters, sorting, and pagination for authorized unverified listings', async () => {
+      const response = await httpAs(app!, verifier)
+        .get(
+          `${recordsPath()}?status=PENDING&sourceId=${fixtureIds.sources[1]}&year=1997&page=1&limit=1&sort=value&order=desc`,
+        )
         .expect(200);
 
-      expect(
-        response.body.data.map((record: { value: number }) => record.value),
-      ).toEqual([900]);
-      expect(response.body.data[0].status).toBe('REJECTED');
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0]).toMatchObject({
+        status: 'PENDING',
+        sourceId: fixtureIds.sources[1],
+        referenceYear: 1997,
+      });
+      expect(response.body.meta).toMatchObject({
+        page: 1,
+        limit: 1,
+        total: 1,
+        totalPages: 1,
+      });
     });
 
     it('filters verified records by reference year', async () => {
@@ -557,7 +626,7 @@ describe('Population records (e2e)', () => {
   });
 
   describe('GET /api/v1/villages/:villageId/population-records/:id', () => {
-    it('returns a pending record without exposing entity relationships', async () => {
+    it('requires an allowed role to return PENDING records', async () => {
       const id = await insertRecord(
         1350,
         1997,
@@ -565,19 +634,78 @@ describe('Population records (e2e)', () => {
         fixtureIds.sources[0],
       );
 
-      const response = await http().get(`${recordsPath()}/${id}`).expect(200);
+      await request(app!.getHttpServer())
+        .get(`${recordsPath()}/${id}`)
+        .expect(401);
+      await request(app!.getHttpServer())
+        .get(`${recordsPath()}/${id}`)
+        .set('x-user-id', admin.userId)
+        .set('x-role', 'ADMIN')
+        .expect(401);
+      await httpAs(app!, viewer).get(`${recordsPath()}/${id}`).expect(403);
+      await httpAs(app!, viewer)
+        .get(`${recordsPath()}/${id}`)
+        .set('x-role', 'ADMIN')
+        .expect(403);
 
-      expect(response.body).toMatchObject({
-        id,
-        villageId: fixtureIds.village,
-        sourceId: fixtureIds.sources[0],
-        value: 1350,
-        referenceYear: 1997,
-        status: 'PENDING',
-      });
-      expect(response.body).not.toHaveProperty('village');
-      expect(response.body).not.toHaveProperty('source');
-      expect(response.body).not.toHaveProperty('reviewedBy');
+      for (const caller of [editor, verifier, admin]) {
+        const response = await httpAs(app!, caller)
+          .get(`${recordsPath()}/${id}`)
+          .expect(200);
+
+        expect(response.body).toMatchObject({
+          id,
+          villageId: fixtureIds.village,
+          sourceId: fixtureIds.sources[0],
+          value: 1350,
+          referenceYear: 1997,
+          status: 'PENDING',
+        });
+        expect(response.body).not.toHaveProperty('village');
+        expect(response.body).not.toHaveProperty('source');
+        expect(response.body).not.toHaveProperty('reviewedBy');
+      }
+    });
+
+    it('restricts REJECTED records to EDITOR, VERIFIER, and ADMIN', async () => {
+      const id = await insertRecord(900, 1997, 'REJECTED');
+
+      await request(app!.getHttpServer())
+        .get(`${recordsPath()}/${id}`)
+        .expect(401);
+      await request(app!.getHttpServer())
+        .get(`${recordsPath()}/${id}`)
+        .set('x-user-id', admin.userId)
+        .set('x-role', 'ADMIN')
+        .expect(401);
+      await httpAs(app!, viewer).get(`${recordsPath()}/${id}`).expect(403);
+
+      for (const caller of [editor, verifier, admin]) {
+        await httpAs(app!, caller)
+          .get(`${recordsPath()}/${id}`)
+          .expect(200)
+          .expect(({ body }) => {
+            expect(body).toMatchObject({ id, status: 'REJECTED' });
+          });
+      }
+    });
+
+    it('keeps VERIFIED records public', async () => {
+      const id = await insertRecord(1200, 1997, 'VERIFIED');
+
+      for (const get of [
+        () => request(app!.getHttpServer()).get(`${recordsPath()}/${id}`),
+        () => httpAs(app!, viewer).get(`${recordsPath()}/${id}`),
+        () => httpAs(app!, editor).get(`${recordsPath()}/${id}`),
+        () => httpAs(app!, verifier).get(`${recordsPath()}/${id}`),
+        () => httpAs(app!, admin).get(`${recordsPath()}/${id}`),
+      ]) {
+        await get()
+          .expect(200)
+          .expect(({ body }) => {
+            expect(body).toMatchObject({ id, status: 'VERIFIED' });
+          });
+      }
     });
 
     it('does not expose a record through another village path', async () => {
@@ -964,6 +1092,145 @@ describe('Population records (e2e)', () => {
         .delete(`${recordsPath()}/not-a-uuid`)
         .expect(400);
       expect(invalidRecord.body.error.code).toBe('BAD_REQUEST');
+    });
+  });
+
+  describe('GET /api/v1/villages/:villageId/population-conflicts', () => {
+    it('groups conflicting years, includes all statuses and sources, and paginates deterministically', async () => {
+      const verified1997 = await insertRecord(
+        1200,
+        1997,
+        'VERIFIED',
+        fixtureIds.sources[0],
+      );
+      const pending1997 = await insertRecord(
+        1500,
+        1997,
+        'PENDING',
+        fixtureIds.sources[1],
+      );
+      const rejected1997 = await insertRecord(
+        1500,
+        1997,
+        'REJECTED',
+        fixtureIds.sources[0],
+      );
+      await insertRecord(800, 2007, 'REJECTED', fixtureIds.sources[0]);
+      await insertRecord(900, 2007, 'PENDING', fixtureIds.sources[1]);
+
+      await request(app!.getHttpServer()).get(conflictsPath()).expect(401);
+      await request(app!.getHttpServer())
+        .get(conflictsPath())
+        .set('x-role', Role.ADMIN)
+        .expect(401);
+      await httpAs(app!, viewer)
+        .get(conflictsPath())
+        .set('x-role', Role.ADMIN)
+        .expect(403);
+
+      for (const caller of [editor, verifier, admin]) {
+        const response = await httpAs(app!, caller)
+          .get(`${conflictsPath()}?limit=10`)
+          .expect(200);
+        expect(
+          response.body.data.map(
+            (group: { referenceYear: number }) => group.referenceYear,
+          ),
+        ).toEqual([1997, 2007]);
+        expect(response.body.meta).toMatchObject({
+          page: 1,
+          limit: 10,
+          total: 2,
+          totalPages: 1,
+        });
+
+        const records1997 = response.body.data[0].records;
+        expect(records1997.map((record: { id: string }) => record.id)).toEqual(
+          [verified1997, pending1997, rejected1997].sort(),
+        );
+        expect(records1997).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: verified1997,
+              value: 1200,
+              status: 'VERIFIED',
+              sourceId: fixtureIds.sources[0],
+              source: {
+                id: fixtureIds.sources[0],
+                title: `E2E-POP-${fixtureToken} census`,
+                type: 'SURVEY',
+                author: null,
+                url: null,
+                year: null,
+              },
+            }),
+            expect.objectContaining({
+              id: pending1997,
+              value: 1500,
+              status: 'PENDING',
+              sourceId: fixtureIds.sources[1],
+            }),
+            expect.objectContaining({
+              id: rejected1997,
+              value: 1500,
+              status: 'REJECTED',
+              sourceId: fixtureIds.sources[0],
+            }),
+          ]),
+        );
+      }
+
+      const firstPage = await httpAs(app!, verifier)
+        .get(`${conflictsPath()}?page=1&limit=1`)
+        .expect(200);
+      const secondPage = await httpAs(app!, verifier)
+        .get(`${conflictsPath()}?page=2&limit=1`)
+        .expect(200);
+      expect(firstPage.body.data[0].referenceYear).toBe(1997);
+      expect(secondPage.body.data[0].referenceYear).toBe(2007);
+      expect(secondPage.body.meta).toMatchObject({
+        page: 2,
+        limit: 1,
+        total: 2,
+        totalPages: 2,
+      });
+    });
+
+    it('omits equal-value years, scopes conflicts to the village, and returns 404 for an unknown village', async () => {
+      await insertRecord(1000, 1997, 'PENDING', fixtureIds.sources[0]);
+      await insertRecord(1000, 1997, 'REJECTED', fixtureIds.sources[1]);
+      await insertRecord(
+        1200,
+        2007,
+        'PENDING',
+        fixtureIds.sources[0],
+        fixtureIds.otherVillage,
+      );
+      await insertRecord(
+        1500,
+        2007,
+        'REJECTED',
+        fixtureIds.sources[1],
+        fixtureIds.otherVillage,
+      );
+
+      const empty = await httpAs(app!, editor).get(conflictsPath()).expect(200);
+      expect(empty.body).toMatchObject({
+        data: [],
+        meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
+      });
+
+      const otherVillage = await httpAs(app!, editor)
+        .get(conflictsPath(fixtureIds.otherVillage))
+        .expect(200);
+      expect(
+        otherVillage.body.data.map(
+          (group: { referenceYear: number }) => group.referenceYear,
+        ),
+      ).toEqual([2007]);
+      expect(otherVillage.body.meta.total).toBe(1);
+
+      await httpAs(app!, admin).get(conflictsPath(randomUUID())).expect(404);
     });
   });
 });

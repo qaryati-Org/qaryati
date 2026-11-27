@@ -14,7 +14,7 @@ All routes use the `/api/v1` prefix. Village and trait IDs are UUIDs.
 
 | Method and route | Behavior |
 | --- | --- |
-| `GET /villages/:villageId/cultural-traits` | Public, paginated list of VERIFIED traits |
+| `GET /villages/:villageId/cultural-traits` | Paginated list; VERIFIED is public, unverified statuses are role-restricted |
 | `GET /villages/:villageId/cultural-traits/:id` | Public lookup of a VERIFIED trait; returns 200 |
 | `POST /villages/:villageId/cultural-traits` | Create a trait; returns 201 |
 | `PATCH /villages/:villageId/cultural-traits/:id` | Update a PENDING trait; returns 200 |
@@ -36,11 +36,16 @@ Explicit `null` values and status or review metadata are not accepted. The
 verify DTO accepts an optional `reviewNote`; the reject DTO requires a
 non-whitespace `reviewNote`. Both are limited to 1,000 characters.
 
-Listing accepts an optional `type`, plus `page` (default 1) and `limit`
-(default 20, maximum 100). Results are ordered by `name ASC`, then `id ASC`;
-`sort` only accepts `name` and `order` only accepts `asc`. There is no status
-filter, so pending and rejected traits cannot be requested from the public
-list. The response uses `{ data, meta }`, with `page`, `limit`, `total`, and
+Listing accepts an optional `status` (`VERIFIED`, `PENDING`, or `REJECTED`),
+optional `type`, `page` (default 1), and `limit` (default 20, maximum 100).
+The status defaults to `VERIFIED`; VERIFIED results are public, including
+explicit `status=VERIFIED`. PENDING and REJECTED results require an
+authenticated `EDITOR`, `VERIFIER`, or `ADMIN`; anonymous requests return 401
+and VIEWER requests return 403. The role is read from the JWT, not from
+client-supplied role headers or query values. A malformed or invalid supplied
+bearer token returns 401, even for VERIFIED reads. Results are ordered by
+`name ASC`, then `id ASC`; `sort` only accepts `name` and `order` only accepts
+`asc`. The response uses `{ data, meta }`, with `page`, `limit`, `total`, and
 `totalPages` in `meta`.
 
 Each trait response includes `id`, `villageId`, `sourceId`, `type`, `name`,
@@ -50,7 +55,9 @@ Each trait response includes `id`, `villageId`, `sourceId`, `type`, `name`,
 
 Invalid IDs, fields, or query parameters return 400; unknown villages or
 traits return 404; disallowed state changes and concurrent write conflicts
-return 409; unknown sources return 422.
+return 409; unknown sources return 422. Unauthenticated requests for
+PENDING/REJECTED lists return 401, and VIEWER requests for those lists return
+403.
 
 ## Verification and access
 
@@ -69,8 +76,10 @@ Create and update require `EDITOR` or `ADMIN`; delete requires `ADMIN`.
 Verify and reject require `VERIFIER` or `ADMIN` and return `200` on success.
 Protected write and review routes return `401` when the access token is
 missing or invalid, and `403` when an authenticated user does not have an
-allowed role. Public GET routes do not require a token; a malformed or invalid
-bearer token is still rejected with `401`.
+allowed role. VERIFIED list results and VERIFIED GET-by-ID results are public;
+the list requires a token for PENDING or REJECTED results. GET-by-ID remains
+VERIFIED-only and returns 404 for PENDING or REJECTED traits. A malformed or
+invalid bearer token is rejected with 401, including on public VERIFIED reads.
 
 The review controller derives the reviewer ID from the authenticated user.
 Client-supplied `reviewerId` or `reviewedById` values are not accepted.

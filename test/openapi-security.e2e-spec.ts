@@ -43,6 +43,7 @@ describe('OpenAPI security (e2e)', () => {
     ['/api/v1/villages/{id}', 'patch'],
     ['/api/v1/sources', 'post'],
     ['/api/v1/villages/{villageId}/population-records/{id}/verify', 'post'],
+    ['/api/v1/villages/{villageId}/population-conflicts', 'get'],
     ['/api/v1/villages/{villageId}/history/{id}/reject', 'post'],
     ['/api/v1/villages/{villageId}/landmarks', 'post'],
     ['/api/v1/villages/{villageId}/cultural-traits/{id}', 'delete'],
@@ -51,9 +52,24 @@ describe('OpenAPI security (e2e)', () => {
   });
 
   it.each([
+    ['/api/v1/villages/{villageId}/population-records', 'get'],
+    ['/api/v1/villages/{villageId}/population-records/{id}', 'get'],
+    ['/api/v1/villages/{villageId}/history', 'get'],
+    ['/api/v1/villages/{villageId}/landmarks', 'get'],
+    ['/api/v1/villages/{villageId}/cultural-traits', 'get'],
+  ])('allows anonymous or bearer access for %s %s', (path, method) => {
+    const security = operation(path, method).security;
+
+    expect(security).toHaveLength(2);
+    expect(security).toEqual(expect.arrayContaining([{}, { bearer: [] }]));
+  });
+
+  it.each([
     ['/api/v1/villages', 'get'],
     ['/api/v1/villages/search', 'get'],
-    ['/api/v1/villages/{villageId}/landmarks', 'get'],
+    ['/api/v1/villages/{villageId}/history/{id}', 'get'],
+    ['/api/v1/villages/{villageId}/landmarks/{id}', 'get'],
+    ['/api/v1/villages/{villageId}/cultural-traits/{id}', 'get'],
     ['/api/v1/auth/login', 'post'],
   ])('keeps %s %s public', (path, method) => {
     expect(usesBearer(operation(path, method))).toBe(false);

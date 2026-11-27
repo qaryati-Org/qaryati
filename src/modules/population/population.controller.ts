@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -22,6 +23,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -31,6 +33,11 @@ import { Paginated } from '../../common/pagination/paginated';
 import type { AuthenticatedUser } from '../auth';
 import { CurrentUser, Role, Roles } from '../auth';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationConflictsQueryDto } from './dto/population-conflicts-query.dto';
+import {
+  PopulationConflictGroupDto,
+  PopulationConflictRecordDto,
+} from './dto/population-conflicts-response.dto';
 import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
 import {
   PopulationHistoryResponseDto,
@@ -49,10 +56,12 @@ export class PopulationController {
   constructor(private readonly populationService: PopulationService) {}
 
   @Get()
+  @ApiSecurity({})
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'List population records for a village',
     description:
-      'Results default to VERIFIED records unless status is specified.',
+      'Results default to VERIFIED records. PENDING and REJECTED filters require an EDITOR, VERIFIER, or ADMIN access token.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiExtraModels(PopulationRecordResponseDto)
@@ -86,15 +95,28 @@ export class PopulationController {
     description: 'Invalid village ID or query parameters',
   })
   @ApiNotFoundResponse({ description: 'Village not found' })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required to request unverified records',
+  })
+  @ApiForbiddenResponse({
+    description: 'Role is not permitted to request unverified records',
+  })
   list(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Query() query: PopulationRecordQueryDto,
+    @CurrentUser() user: AuthenticatedUser | undefined,
   ): Promise<Paginated<PopulationRecordResponseDto>> {
-    return this.populationService.list(villageId, query);
+    return this.populationService.list(villageId, query, user);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a population record by ID for a village' })
+  @ApiSecurity({})
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get a population record by ID for a village',
+    description:
+      'VERIFIED records are public. PENDING and REJECTED records require an EDITOR, VERIFIER, or ADMIN access token.',
+  })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
   @ApiOkResponse({ type: PopulationRecordResponseDto })
@@ -102,11 +124,18 @@ export class PopulationController {
   @ApiNotFoundResponse({
     description: 'Village or population record not found',
   })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required to access unverified records',
+  })
+  @ApiForbiddenResponse({
+    description: 'Role is not permitted to access unverified records',
+  })
   findOne(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthenticatedUser | undefined,
   ): Promise<PopulationRecordResponseDto> {
-    return this.populationService.findOne(villageId, id);
+    return this.populationService.findOne(villageId, id, user);
   }
 
   @Post()
@@ -288,5 +317,61 @@ export class PopulationHistoryController {
     @Query() query: PopulationHistoryQueryDto,
   ): Promise<Paginated<PopulationHistoryResponseDto>> {
     return this.populationService.history(villageId, query);
+  }
+
+  @Get('population-conflicts')
+  @Roles(Role.EDITOR, Role.VERIFIER, Role.ADMIN)
+  @ApiOperation({
+    summary: 'List conflicting population records for a village',
+    description:
+      'A reference year conflicts when its records contain at least two distinct population values. Results include all records for each conflicting year.',
+  })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiExtraModels(
+    PopulationConflictGroupDto,
+    PopulationConflictRecordDto,
+    PopulationHistorySourceDto,
+  )
+  @ApiOkResponse({
+    description: 'Paginated conflicting population years returned',
+    schema: {
+      type: 'object',
+      required: ['data', 'meta'],
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(PopulationConflictGroupDto) },
+        },
+        meta: {
+          type: 'object',
+          required: ['page', 'limit', 'total', 'totalPages'],
+          properties: {
+            page: { type: 'integer', description: 'Current page number' },
+            limit: { type: 'integer', description: 'Conflict years per page' },
+            total: { type: 'integer', description: 'Total conflicting years' },
+            totalPages: {
+              type: 'integer',
+              description: 'Total number of pages',
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid village ID or pagination parameters',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Missing or invalid access token',
+  })
+  @ApiForbiddenResponse({
+    description: 'Role is not permitted to view population conflicts',
+  })
+  @ApiNotFoundResponse({ description: 'Village not found' })
+  conflicts(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Query() query: PopulationConflictsQueryDto,
+  ): Promise<Paginated<PopulationConflictGroupDto>> {
+    return this.populationService.conflicts(villageId, query);
   }
 }

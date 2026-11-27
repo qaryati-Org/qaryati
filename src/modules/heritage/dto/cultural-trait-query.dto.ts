@@ -1,9 +1,18 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsIn, IsOptional } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
+import { VerificationStatus } from '../../source';
 import { CulturalTraitType } from '../entities/cultural-trait.entity';
 
 export class CulturalTraitQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    enum: VerificationStatus,
+    default: VerificationStatus.VERIFIED,
+  })
+  @IsOptional()
+  @IsEnum(VerificationStatus)
+  status?: VerificationStatus;
+
   @ApiPropertyOptional({ enum: CulturalTraitType })
   @IsOptional()
   @IsEnum(CulturalTraitType)

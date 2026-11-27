@@ -9,6 +9,7 @@ import {
   TEST_CALLER_ID,
 } from '../../../test/utils/unit-auth';
 import { Role } from '../auth/enums/role.enum';
+import { VerificationStatus } from '../source';
 import { setupApp } from '../../setup-app';
 import { HistoryRecordType } from './entities/history-record.entity';
 import { HistoryController } from './history.controller';
@@ -98,6 +99,20 @@ describe('HistoryController with role enforcement', () => {
         page: 2,
         limit: 5,
       }),
+      undefined,
+    );
+  });
+
+  it('passes the authenticated caller and status filter to the service', async () => {
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}?status=${VerificationStatus.PENDING}`)
+      .set('Authorization', bearerFor(Role.EDITOR))
+      .expect(200);
+
+    expect(historyService.list).toHaveBeenCalledWith(
+      VILLAGE_ID,
+      expect.objectContaining({ status: VerificationStatus.PENDING }),
+      expect.objectContaining({ id: TEST_CALLER_ID, role: Role.EDITOR }),
     );
   });
 
@@ -109,7 +124,7 @@ describe('HistoryController with role enforcement', () => {
       .get(`${BASE_PATH}?type=NOT_A_TYPE`)
       .expect(400);
     await request(app.getHttpServer())
-      .get(`${BASE_PATH}?status=PENDING`)
+      .get(`${BASE_PATH}?status=UNKNOWN`)
       .expect(400);
 
     expect(historyService.list).not.toHaveBeenCalled();

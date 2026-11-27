@@ -1,17 +1,27 @@
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { isUniqueViolation } from '../../common/database/pg-errors';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { ValidationException } from '../../common/errors/validation.exception';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
+import { PopulationConflictsQueryDto } from './dto/population-conflicts-query.dto';
+import {
+  PopulationConflictGroupDto,
+  PopulationConflictRecordDto,
+  PopulationConflictsQueryResult,
+} from './dto/population-conflicts-response.dto';
 import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
 import {
   PopulationHistoryQueryResult,
@@ -89,6 +99,54 @@ SELECT
     '[]'::json
   ) AS rows`;
 
+export const POPULATION_CONFLICTS_SQL = `
+WITH conflicting_years AS (
+  SELECT reference_year AS "referenceYear"
+  FROM population_records
+  WHERE village_id = $1
+  GROUP BY reference_year
+  HAVING COUNT(DISTINCT value) >= 2
+),
+page AS (
+  SELECT "referenceYear"
+  FROM conflicting_years
+  ORDER BY "referenceYear" ASC
+  LIMIT $2 OFFSET $3
+),
+conflicts AS (
+  SELECT
+    page."referenceYear",
+    json_agg(
+      json_build_object(
+        'id', record.id,
+        'sourceId', record.source_id,
+        'value', record.value,
+        'status', record.status
+      )
+      ORDER BY record.id ASC
+    ) AS records
+  FROM page
+  JOIN population_records record
+    ON record.village_id = $1
+   AND record.reference_year = page."referenceYear"
+  GROUP BY page."referenceYear"
+)
+SELECT
+  (SELECT COUNT(*)::int FROM conflicting_years) AS total,
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'referenceYear', conflicts."referenceYear",
+          'records', conflicts.records
+        )
+        ORDER BY conflicts."referenceYear" ASC
+      )
+      FROM conflicts
+    ),
+    '[]'::json
+  ) AS rows`;
+
 export interface PopulationReviewerContext {
   readonly reviewerId: string;
 }
@@ -106,15 +164,19 @@ export class PopulationService {
   async list(
     villageId: string,
     query: PopulationRecordQueryDto,
+    user?: AuthenticatedUser,
   ): Promise<Paginated<PopulationRecordResponseDto>> {
+    const status = query.status ?? VerificationStatus.VERIFIED;
+    if (status !== VerificationStatus.VERIFIED) {
+      this.assertCanViewUnverified(user);
+    }
+
     await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.populationRecords
       .createQueryBuilder('record')
       .where('record.villageId = :villageId', { villageId })
-      .andWhere('record.status = :status', {
-        status: query.status ?? VerificationStatus.VERIFIED,
-      });
+      .andWhere('record.status = :status', { status });
 
     if (query.year !== undefined) {
       queryBuilder.andWhere('record.referenceYear = :year', {
@@ -179,11 +241,60 @@ export class PopulationService {
     return paginate(data, Number(result.total), query);
   }
 
+  async conflicts(
+    villageId: string,
+    query: PopulationConflictsQueryDto,
+  ): Promise<Paginated<PopulationConflictGroupDto>> {
+    await this.villages.ensureExists(villageId);
+
+    const [result] = await this.dataSource.query<
+      PopulationConflictsQueryResult[]
+    >(POPULATION_CONFLICTS_SQL, [villageId, query.limit, query.offset]);
+    if (!result) {
+      throw new InternalServerErrorException(
+        'Population conflicts query returned no result',
+      );
+    }
+    if (result.rows.length === 0) {
+      return paginate([], Number(result.total), query);
+    }
+
+    const sources = await this.sources.findByIds([
+      ...new Set(
+        result.rows.flatMap((group) =>
+          group.records.map((record) => record.sourceId),
+        ),
+      ),
+    ]);
+    const sourcesById = new Map(sources.map((source) => [source.id, source]));
+    const data = result.rows.map((group) => {
+      const records = group.records.map((record) => {
+        const source = sourcesById.get(record.sourceId);
+        if (!source) {
+          throw new InternalServerErrorException(
+            'Population conflicts contain a record with an unavailable source',
+          );
+        }
+        return PopulationConflictRecordDto.from(record, source);
+      });
+      return {
+        referenceYear: Number(group.referenceYear),
+        records,
+      };
+    });
+
+    return paginate(data, Number(result.total), query);
+  }
+
   async findOne(
     villageId: string,
     recordId: string,
+    user?: AuthenticatedUser,
   ): Promise<PopulationRecordResponseDto> {
     const record = await this.getOrFail(villageId, recordId);
+    if (record.status !== VerificationStatus.VERIFIED) {
+      this.assertCanViewUnverified(user);
+    }
     return PopulationRecordResponseDto.from(record);
   }
 
@@ -292,6 +403,17 @@ export class PopulationService {
       );
     }
     return record;
+  }
+
+  private assertCanViewUnverified(user?: AuthenticatedUser): void {
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    if (![Role.EDITOR, Role.VERIFIER, Role.ADMIN].includes(user.role)) {
+      throw new ForbiddenException(
+        'Your role is not allowed to view unverified population records',
+      );
+    }
   }
 
   private async review(

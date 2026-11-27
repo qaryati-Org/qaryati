@@ -67,14 +67,18 @@ All routes use the `/api/v1` prefix. Village and record path IDs are UUIDs.
 
 `GET /api/v1/villages/:villageId/history`
 
-These GET routes are public and do not require a token; a malformed or
-invalid supplied bearer token returns `401`. The list returns **VERIFIED
-records only**. It supports the optional `type` filter (`OVERVIEW` or `EVENT`)
-and pagination parameters `page` (default `1`) and `limit` (default `20`,
-maximum `100`). Sorting is
-fixed: `startYear ASC NULLS FIRST`, then `id ASC`; `sort` may only be
-`startYear` and `order` may only be `asc`. A client-supplied `status` filter
-is rejected, so pending and rejected records cannot be requested.
+The list supports the optional `status` filter (`VERIFIED`, `PENDING`, or
+`REJECTED`). If omitted, it defaults to `VERIFIED`. VERIFIED lists are public,
+including an explicit `status=VERIFIED`; PENDING and REJECTED lists require an
+authenticated `EDITOR`, `VERIFIER`, or `ADMIN`. Anonymous requests for those
+statuses return `401`, and authenticated VIEWER requests return `403`. Roles
+are taken from the JWT, not request-supplied role values. A malformed or
+invalid supplied bearer token returns `401`, including for VERIFIED reads.
+
+The list also supports the optional `type` filter (`OVERVIEW` or `EVENT`) and
+pagination parameters `page` (default `1`) and `limit` (default `20`, maximum
+`100`). Sorting is fixed: `startYear ASC NULLS FIRST`, then `id ASC`; `sort`
+may only be `startYear` and `order` may only be `asc`.
 
 Each item contains the record fields listed above and a nested `source` object
 with `id`, `title`, `type`, `author`, `url`, and publication `year`. Results
@@ -93,7 +97,8 @@ use the standard pagination envelope:
 ```
 
 `GET /api/v1/villages/:villageId/history/:id` returns one record only when
-its status is `VERIFIED`. Invalid village or record UUIDs return `400`.
+its status is `VERIFIED`, regardless of caller role. Invalid village or
+record UUIDs return `400`.
 An unknown village, a missing record, a record belonging to another village,
 or a `PENDING` or `REJECTED` record returns `404`.
 
@@ -135,8 +140,9 @@ Important errors include `400` for invalid UUIDs, request fields, query
 parameters, or year ranges; `404` for an unknown village or record; `409` for
 duplicate overviews, forbidden state changes, or a concurrent write conflict;
 `422` for an unknown source; `401` for a missing or invalid access token on
-protected routes; and `403` when an authenticated user lacks the role required
-by a protected route.
+protected routes or for unauthenticated PENDING/REJECTED list requests; and
+`403` when an authenticated user lacks the role required by a protected route,
+including a VIEWER requesting PENDING/REJECTED history.
 
 ### Verify and reject
 

@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -22,6 +23,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -44,15 +46,18 @@ export class CulturalTraitController {
   constructor(private readonly culturalTraitService: CulturalTraitService) {}
 
   @Get()
+  @ApiSecurity({})
+  @ApiBearerAuth()
   @ApiOperation({
-    summary: 'List verified cultural traits for a village',
+    summary: 'List cultural traits for a village',
     description:
-      'Only VERIFIED cultural traits are included in this public list.',
+      'Defaults to VERIFIED cultural traits, which are public. ' +
+      'PENDING and REJECTED filters require an EDITOR, VERIFIER, or ADMIN access token.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiExtraModels(CulturalTraitResponseDto)
   @ApiOkResponse({
-    description: 'Paginated verified cultural traits returned',
+    description: 'Paginated cultural traits returned',
     schema: {
       type: 'object',
       required: ['data', 'meta'],
@@ -80,12 +85,20 @@ export class CulturalTraitController {
   @ApiBadRequestResponse({
     description: 'Invalid village ID or query parameters',
   })
+  @ApiUnauthorizedResponse({
+    description:
+      'Authentication required for PENDING or REJECTED cultural traits',
+  })
+  @ApiForbiddenResponse({
+    description: 'VIEWER role cannot view PENDING or REJECTED cultural traits',
+  })
   @ApiNotFoundResponse({ description: 'Village not found' })
   list(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Query() query: CulturalTraitQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
   ): Promise<Paginated<CulturalTraitResponseDto>> {
-    return this.culturalTraitService.list(villageId, query);
+    return this.culturalTraitService.list(villageId, query, user);
   }
 
   @Get(':id')

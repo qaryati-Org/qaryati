@@ -293,7 +293,7 @@ describe('Population review (e2e)', () => {
     }
     populationRecordIds.add(createdId);
 
-    const records = await request(app!.getHttpServer())
+    const records = await httpAs(app!, editor)
       .get(recordsPath())
       .query({ status: 'PENDING' });
     const history = await request(app!.getHttpServer()).get(

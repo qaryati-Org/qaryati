@@ -1,14 +1,18 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { isForeignKeyViolation } from '../../common/database/pg-errors';
 import { paginate, Paginated } from '../../common/pagination/paginated';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateCulturalTraitDto } from './dto/create-cultural-trait.dto';
@@ -65,15 +69,19 @@ export class CulturalTraitService {
   async list(
     villageId: string,
     query: CulturalTraitQueryDto,
+    user?: AuthenticatedUser,
   ): Promise<Paginated<CulturalTraitResponseDto>> {
+    const status = query.status ?? VerificationStatus.VERIFIED;
+    if (status !== VerificationStatus.VERIFIED) {
+      this.assertCanListUnverified(user);
+    }
+
     await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.culturalTraits
       .createQueryBuilder('culturalTrait')
       .where('culturalTrait.villageId = :villageId', { villageId })
-      .andWhere('culturalTrait.status = :status', {
-        status: VerificationStatus.VERIFIED,
-      });
+      .andWhere('culturalTrait.status = :status', { status });
 
     if (query.type !== undefined) {
       queryBuilder.andWhere('culturalTrait.type = :type', {
@@ -234,6 +242,17 @@ export class CulturalTraitService {
       );
     }
     return culturalTrait;
+  }
+
+  private assertCanListUnverified(user?: AuthenticatedUser): void {
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    if (![Role.EDITOR, Role.VERIFIER, Role.ADMIN].includes(user.role)) {
+      throw new ForbiddenException(
+        'Your role is not allowed to view unverified cultural traits',
+      );
+    }
   }
 
   private async review(

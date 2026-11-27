@@ -12,6 +12,19 @@ export enum LandmarkType {
 @Entity('landmarks')
 @Index('idx_landmarks_village_id', ['villageId'])
 @Index('idx_landmarks_source_id', ['sourceId'])
+@Index('idx_landmarks_village_status_name_id', [
+  'villageId',
+  'status',
+  'name',
+  'id',
+])
+@Index('idx_landmarks_village_status_type_name_id', [
+  'villageId',
+  'status',
+  'type',
+  'name',
+  'id',
+])
 export class Landmark extends VerifiableEntity {
   @ManyToOne('Village', { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({

@@ -1,7 +1,8 @@
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { Role } from '../src/modules/auth/enums/role.enum';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 const PREFIX = 'E2E-SRC';
@@ -10,6 +11,10 @@ const UNKNOWN_ID = '00000000-0000-4000-8000-000000000000';
 describe('Sources (e2e)', () => {
   let app: INestApplication<App>;
   let ds: DataSource;
+  let admin: TestCaller;
+
+  // Write endpoints need a token; ADMIN is allowed on all of them.
+  const http = () => httpAs(app, admin);
 
   const cleanup = async () => {
     await ds.query(`DELETE FROM sources WHERE title LIKE '${PREFIX}%'`);
@@ -17,6 +22,7 @@ describe('Sources (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    admin = await callerWithRole(app, Role.ADMIN);
     ds = app.get(DataSource);
     await ds.query(`DROP TABLE IF EXISTS e2e_source_refs`);
     await cleanup();
@@ -35,7 +41,7 @@ describe('Sources (e2e)', () => {
 
   describe('POST /api/v1/sources', () => {
     it('creates a source with omitted optional fields set to null', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .post('/api/v1/sources')
         .send({ title: `${PREFIX} Census`, type: 'WEBSITE' })
         .expect(201);
@@ -51,7 +57,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('rejects missing title, unknown type and invalid URL with field details', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .post('/api/v1/sources')
         .send({ type: 'PODCAST', url: 'not-a-url' })
         .expect(400);
@@ -64,7 +70,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('rejects a lowercase source type', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .post('/api/v1/sources')
         .send({ title: `${PREFIX} Lowercase`, type: 'book' })
         .expect(400);
@@ -75,7 +81,7 @@ describe('Sources (e2e)', () => {
     it.each([0, -5, 3000])(
       'rejects publication year %i outside the accepted range',
       async (year) => {
-        const res = await request(app.getHttpServer())
+        const res = await http()
           .post('/api/v1/sources')
           .send({ title: `${PREFIX} Invalid year ${year}`, type: 'BOOK', year })
           .expect(400);
@@ -85,7 +91,7 @@ describe('Sources (e2e)', () => {
     );
 
     it('rejects unknown properties', async () => {
-      await request(app.getHttpServer())
+      await http()
         .post('/api/v1/sources')
         .send({
           title: `${PREFIX} Unknown property`,
@@ -108,7 +114,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('filters by type and paginates results', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .get(`/api/v1/sources?q=${PREFIX}&type=BOOK&limit=1&page=2`)
         .expect(200);
 
@@ -122,7 +128,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('sorts by year descending with unknown years last', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .get(`/api/v1/sources?q=${PREFIX}&sort=year&order=desc`)
         .expect(200);
 
@@ -132,7 +138,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('filters by exact year', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .get(`/api/v1/sources?q=${PREFIX}&year=1990`)
         .expect(200);
 
@@ -141,12 +147,12 @@ describe('Sources (e2e)', () => {
     });
 
     it('searches by author and treats percent as a literal character', async () => {
-      const author = await request(app.getHttpServer())
+      const author = await http()
         .get('/api/v1/sources?q=Author%20Two')
         .expect(200);
       expect(author.body.data[0].title).toBe(`${PREFIX} Book B`);
 
-      const percent = await request(app.getHttpServer())
+      const percent = await http()
         .get(`/api/v1/sources?q=${encodeURIComponent('100%')}`)
         .expect(200);
       expect(percent.body.meta.total).toBe(1);
@@ -158,7 +164,7 @@ describe('Sources (e2e)', () => {
       ['type', 'podcast'],
       ['limit', '101'],
     ])('rejects invalid query parameter %s=%s', async (key, value) => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .get(`/api/v1/sources?${key}=${value}`)
         .expect(400);
 
@@ -170,7 +176,7 @@ describe('Sources (e2e)', () => {
     let sourceId: string;
 
     beforeAll(async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .post('/api/v1/sources')
         .send({
           title: `${PREFIX} Lifecycle`,
@@ -184,9 +190,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('gets a source by ID', async () => {
-      const res = await request(app.getHttpServer())
-        .get(`/api/v1/sources/${sourceId}`)
-        .expect(200);
+      const res = await http().get(`/api/v1/sources/${sourceId}`).expect(200);
 
       expect(res.body).toMatchObject({
         id: sourceId,
@@ -197,18 +201,14 @@ describe('Sources (e2e)', () => {
     });
 
     it('returns 400 for malformed IDs and 404 for unknown UUIDs', async () => {
-      await request(app.getHttpServer())
-        .get('/api/v1/sources/not-a-uuid')
-        .expect(400);
+      await http().get('/api/v1/sources/not-a-uuid').expect(400);
 
-      const res = await request(app.getHttpServer())
-        .get(`/api/v1/sources/${UNKNOWN_ID}`)
-        .expect(404);
+      const res = await http().get(`/api/v1/sources/${UNKNOWN_ID}`).expect(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
 
     it('patches one field without changing other fields', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .patch(`/api/v1/sources/${sourceId}`)
         .send({ year: 1999 })
         .expect(200);
@@ -223,7 +223,7 @@ describe('Sources (e2e)', () => {
     });
 
     it('clears an optional field when explicitly set to null', async () => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .patch(`/api/v1/sources/${sourceId}`)
         .send({ author: null })
         .expect(200);
@@ -236,7 +236,7 @@ describe('Sources (e2e)', () => {
       { name: 'null type', body: { type: null } },
       { name: 'out-of-range year', body: { year: 3000 } },
     ])('rejects a patch with $name', async ({ body }) => {
-      const res = await request(app.getHttpServer())
+      const res = await http()
         .patch(`/api/v1/sources/${sourceId}`)
         .send(body)
         .expect(400);
@@ -245,33 +245,29 @@ describe('Sources (e2e)', () => {
     });
 
     it('returns 404 when patching or deleting an unknown source', async () => {
-      const patch = await request(app.getHttpServer())
+      const patch = await http()
         .patch(`/api/v1/sources/${UNKNOWN_ID}`)
         .send({ year: 1999 })
         .expect(404);
       expect(patch.body.error.code).toBe('NOT_FOUND');
 
-      const deletion = await request(app.getHttpServer())
+      const deletion = await http()
         .delete(`/api/v1/sources/${UNKNOWN_ID}`)
         .expect(404);
       expect(deletion.body.error.code).toBe('NOT_FOUND');
     });
 
     it('deletes a source with 204 and then returns 404', async () => {
-      await request(app.getHttpServer())
-        .delete(`/api/v1/sources/${sourceId}`)
-        .expect(204);
+      await http().delete(`/api/v1/sources/${sourceId}`).expect(204);
 
-      const res = await request(app.getHttpServer())
-        .get(`/api/v1/sources/${sourceId}`)
-        .expect(404);
+      const res = await http().get(`/api/v1/sources/${sourceId}`).expect(404);
       expect(res.body.error.code).toBe('NOT_FOUND');
     });
   });
 
   describe('deleting a referenced source', () => {
     it('returns 409 while another record references the source', async () => {
-      const created = await request(app.getHttpServer())
+      const created = await http()
         .post('/api/v1/sources')
         .send({ title: `${PREFIX} Referenced`, type: 'ARCHIVE' })
         .expect(201);
@@ -280,21 +276,17 @@ describe('Sources (e2e)', () => {
         created.body.id,
       ]);
 
-      const deletion = await request(app.getHttpServer())
+      const deletion = await http()
         .delete(`/api/v1/sources/${created.body.id}`)
         .expect(409);
       expect(deletion.body.error.code).toBe('CONFLICT');
 
-      await request(app.getHttpServer())
-        .get(`/api/v1/sources/${created.body.id}`)
-        .expect(200);
+      await http().get(`/api/v1/sources/${created.body.id}`).expect(200);
 
       await ds.query(`DELETE FROM e2e_source_refs WHERE source_id = $1`, [
         created.body.id,
       ]);
-      await request(app.getHttpServer())
-        .delete(`/api/v1/sources/${created.body.id}`)
-        .expect(204);
+      await http().delete(`/api/v1/sources/${created.body.id}`).expect(204);
     });
   });
 });

@@ -1,5 +1,12 @@
-import { Controller, ExecutionContext, Get } from '@nestjs/common';
+import {
+  Controller,
+  ExecutionContext,
+  ForbiddenException,
+  Get,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AuthenticatedUser } from '../authenticated-user';
 import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
 import { RolesGuard } from './roles.guard';
@@ -24,8 +31,10 @@ class OpenController {
 function contextFor(
   controller: new () => object,
   handler: string,
+  user?: AuthenticatedUser,
 ): ExecutionContext {
   return {
+    switchToHttp: () => ({ getRequest: () => ({ user }) }),
     getClass: () => controller,
     getHandler: () =>
       (controller.prototype as Record<string, () => void>)[handler],
@@ -51,12 +60,43 @@ describe('RolesGuard', () => {
     );
   });
 
-  // Temporary behaviour until JWT login exists.
-  it.each([
-    [TestController, 'withHandlerRoles'],
-    [TestController, 'withClassRoles'],
-    [OpenController, 'open'],
-  ])('allows every request for now (%p.%s)', (controller, handler) => {
-    expect(guard.canActivate(contextFor(controller, handler))).toBe(true);
+  const as = (role: Role): AuthenticatedUser => ({
+    id: 'u-1',
+    email: 'user@example.com',
+    role,
+  });
+
+  it('lets anyone call an endpoint without @Roles()', () => {
+    expect(guard.canActivate(contextFor(OpenController, 'open'))).toBe(true);
+  });
+
+  it('returns 401 for an anonymous caller on a protected endpoint', () => {
+    expect(() =>
+      guard.canActivate(contextFor(TestController, 'withHandlerRoles')),
+    ).toThrow(UnauthorizedException);
+  });
+
+  it('returns 403 when the caller has none of the listed roles', () => {
+    expect(() =>
+      guard.canActivate(
+        contextFor(TestController, 'withHandlerRoles', as(Role.VIEWER)),
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it('does not treat ADMIN as allowed unless it is listed', () => {
+    expect(() =>
+      guard.canActivate(
+        contextFor(TestController, 'withHandlerRoles', as(Role.ADMIN)),
+      ),
+    ).toThrow(ForbiddenException);
+  });
+
+  it.each([Role.EDITOR, Role.VERIFIER])('allows a listed role (%s)', (role) => {
+    expect(
+      guard.canActivate(
+        contextFor(TestController, 'withHandlerRoles', as(role)),
+      ),
+    ).toBe(true);
   });
 });

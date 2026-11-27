@@ -65,10 +65,6 @@ reproduced with `npm run seed:perf:heritage`. Record numbers from 1 through
 2,000 are included in each name, keeping names distinct within each village;
 the generated names fit the 255-character name columns.
 
-The results below apply only to the 60-record-per-village-per-type dataset.
-A new baseline using 2,000 records per village per type is required before
-adding indexes; no results for that expanded dataset are available yet.
-
 The benchmark dataset contained five synthetic villages, with 60 VERIFIED
 landmarks and 60 VERIFIED cultural traits per village: 300 records of each
 type in total.
@@ -170,6 +166,44 @@ npm run seed:perf:heritage -- --clear
 
 The fixture does not remove its synthetic villages; those remain available
 for other local performance tests.
+
+## Added listing indexes
+
+The Landmark and Cultural Trait list queries filter on `village_id` and
+`status`, optionally filter on `type`, order by `name` and then `id`, and use
+offset/limit pagination. The migration adds these B-tree indexes:
+
+| Table | Index | Columns |
+| --- | --- | --- |
+| `landmarks` | `idx_landmarks_village_status_name_id` | `(village_id, status, name, id)` |
+| `landmarks` | `idx_landmarks_village_status_type_name_id` | `(village_id, status, type, name, id)` |
+| `cultural_traits` | `idx_cultural_traits_village_status_name_id` | `(village_id, status, name, id)` |
+| `cultural_traits` | `idx_cultural_traits_village_status_type_name_id` | `(village_id, status, type, name, id)` |
+
+The first index for each table supports the common status-filtered listing
+and its deterministic `name, id` ordering. The second supports the optional
+type equality filter before the same ordering. Type-filtered requests make up
+30% of the k6 workload, so the separate indexes address a query shape that
+the first index cannot efficiently seek by type. Existing indexes are
+preserved.
+
+## Results: 20,000-record pre-index baseline
+
+The following results were recorded on the 20,000-record synthetic dataset
+before these indexes were added. They are the comparison baseline, not
+evidence of an improvement:
+
+| Metric | Pre-index result |
+| --- | ---: |
+| Requests | 16,632 |
+| Throughput | 207.24 requests/second |
+| Failed requests | 0 |
+| Overall p95 | 19.17 ms |
+| Landmark p95 | 19.12 ms |
+| Cultural Trait p95 | 19.21 ms |
+
+An after-index benchmark on the same dataset and workload is still required.
+Until that comparison is run, performance improvements are unproven.
 
 ## Results: 60-record-per-village-per-type baseline
 

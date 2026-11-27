@@ -87,6 +87,8 @@ export class VillageService {
       nameAr: dto.nameAr,
       nameEn: dto.nameEn ?? null,
       nameOrigin: dto.nameOrigin ?? null,
+      latitude: dto.latitude ?? null,
+      longitude: dto.longitude ?? null,
       governorateId: dto.governorateId,
       municipalityId,
     });
@@ -117,6 +119,8 @@ export class VillageService {
     if (dto.nameAr !== undefined) village.nameAr = dto.nameAr;
     if (dto.nameEn !== undefined) village.nameEn = dto.nameEn;
     if (dto.nameOrigin !== undefined) village.nameOrigin = dto.nameOrigin;
+    if (dto.latitude !== undefined) village.latitude = dto.latitude;
+    if (dto.longitude !== undefined) village.longitude = dto.longitude;
     village.governorateId = governorateId;
     village.municipalityId = municipalityId;
 

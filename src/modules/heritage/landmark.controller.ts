@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -22,6 +23,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -44,14 +46,18 @@ export class LandmarkController {
   constructor(private readonly landmarkService: LandmarkService) {}
 
   @Get()
+  @ApiSecurity({})
+  @ApiBearerAuth()
   @ApiOperation({
-    summary: 'List verified landmarks for a village',
-    description: 'Only VERIFIED landmarks are included in this public list.',
+    summary: 'List landmarks for a village',
+    description:
+      'Defaults to VERIFIED landmarks, which are public. ' +
+      'PENDING and REJECTED filters require an EDITOR, VERIFIER, or ADMIN access token.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiExtraModels(LandmarkResponseDto)
   @ApiOkResponse({
-    description: 'Paginated verified landmarks returned',
+    description: 'Paginated landmarks returned',
     schema: {
       type: 'object',
       required: ['data', 'meta'],
@@ -79,12 +85,19 @@ export class LandmarkController {
   @ApiBadRequestResponse({
     description: 'Invalid village ID or query parameters',
   })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required for PENDING or REJECTED landmarks',
+  })
+  @ApiForbiddenResponse({
+    description: 'VIEWER role cannot view PENDING or REJECTED landmarks',
+  })
   @ApiNotFoundResponse({ description: 'Village not found' })
   list(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Query() query: LandmarkQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
   ): Promise<Paginated<LandmarkResponseDto>> {
-    return this.landmarkService.list(villageId, query);
+    return this.landmarkService.list(villageId, query, user);
   }
 
   @Get(':id')

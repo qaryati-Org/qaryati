@@ -87,6 +87,9 @@ describe('History module (e2e)', () => {
   const historyPath = (villageId = fixtureIds.village) =>
     `/api/v1/villages/${villageId}/history`;
 
+  let viewer: TestCaller;
+  let editor: TestCaller;
+  let verifier: TestCaller;
   let admin: TestCaller;
 
   // Write endpoints need a token; ADMIN is allowed on all of them.
@@ -162,6 +165,9 @@ describe('History module (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    viewer = await callerWithRole(app, Role.VIEWER);
+    editor = await callerWithRole(app, Role.EDITOR);
+    verifier = await callerWithRole(app, Role.VERIFIER);
     admin = await callerWithRole(app, Role.ADMIN);
     dataSource = app.get(DataSource);
     historyService = app.get(HistoryService);
@@ -542,7 +548,9 @@ describe('History module (e2e)', () => {
       startYear: 1948,
     });
 
-    const response = await http().get(historyPath()).expect(200);
+    const response = await request(app!.getHttpServer())
+      .get(historyPath())
+      .expect(200);
     expect(
       response.body.data.map((record: { id: string }) => record.id),
     ).toEqual([verifiedId]);
@@ -560,10 +568,74 @@ describe('History module (e2e)', () => {
       response.body.data.map((record: { id: string }) => record.id),
     ).not.toEqual(expect.arrayContaining([pendingId, rejectedId]));
 
+    const explicitVerified = await request(app!.getHttpServer())
+      .get(`${historyPath()}?status=VERIFIED`)
+      .expect(200);
+    expect(
+      explicitVerified.body.data.map((record: { id: string }) => record.id),
+    ).toEqual([verifiedId]);
+
     await http().get(`/api/v1/villages/not-a-uuid/history`).expect(400);
     await http().get(`${historyPath()}?type=UNSUPPORTED`).expect(400);
-    await http().get(`${historyPath()}?status=PENDING`).expect(400);
+    await http().get(`${historyPath()}?status=UNKNOWN`).expect(400);
+
+    for (const caller of [viewer, editor, verifier, admin]) {
+      const roleResponse = await httpAs(app!, caller)
+        .get(`${historyPath()}?status=VERIFIED`)
+        .expect(200);
+      expect(
+        roleResponse.body.data.map((record: { id: string }) => record.id),
+      ).toEqual([verifiedId]);
+    }
   });
+
+  it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+    'restricts %s history filters to EDITOR, VERIFIER, and ADMIN',
+    async (status) => {
+      if (!app) {
+        throw new Error('The History test application is not initialized');
+      }
+      const firstId = await insertRecord({
+        status,
+        type: HistoryRecordType.EVENT,
+        startYear: 1948,
+      });
+      await insertRecord({
+        status,
+        type: HistoryRecordType.EVENT,
+        startYear: 1949,
+      });
+      await insertRecord({
+        status,
+        type: HistoryRecordType.OVERVIEW,
+        startYear: null,
+      });
+      const path = `${historyPath()}?status=${status}&type=${HistoryRecordType.EVENT}&page=1&limit=1`;
+
+      await request(app.getHttpServer()).get(path).expect(401);
+      await request(app.getHttpServer())
+        .get(path)
+        .set('x-role', Role.ADMIN)
+        .expect(401);
+      await httpAs(app, viewer).get(path).set('x-role', Role.ADMIN).expect(403);
+
+      for (const caller of [editor, verifier, admin]) {
+        const response = await httpAs(app, caller).get(path).expect(200);
+        expect(response.body.data).toHaveLength(1);
+        expect(response.body.data[0]).toMatchObject({
+          id: firstId,
+          status,
+          type: HistoryRecordType.EVENT,
+        });
+        expect(response.body.meta).toMatchObject({
+          page: 1,
+          limit: 1,
+          total: 2,
+          totalPages: 2,
+        });
+      }
+    },
+  );
 
   it('creates, updates, and deletes through the current permissive CRUD routes', async () => {
     const created = await http()

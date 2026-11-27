@@ -53,6 +53,9 @@ describe('OpenAPI security (e2e)', () => {
   it.each([
     ['/api/v1/villages/{villageId}/population-records', 'get'],
     ['/api/v1/villages/{villageId}/population-records/{id}', 'get'],
+    ['/api/v1/villages/{villageId}/history', 'get'],
+    ['/api/v1/villages/{villageId}/landmarks', 'get'],
+    ['/api/v1/villages/{villageId}/cultural-traits', 'get'],
   ])('allows anonymous or bearer access for %s %s', (path, method) => {
     const security = operation(path, method).security;
 
@@ -63,7 +66,9 @@ describe('OpenAPI security (e2e)', () => {
   it.each([
     ['/api/v1/villages', 'get'],
     ['/api/v1/villages/search', 'get'],
-    ['/api/v1/villages/{villageId}/landmarks', 'get'],
+    ['/api/v1/villages/{villageId}/history/{id}', 'get'],
+    ['/api/v1/villages/{villageId}/landmarks/{id}', 'get'],
+    ['/api/v1/villages/{villageId}/cultural-traits/{id}', 'get'],
     ['/api/v1/auth/login', 'post'],
   ])('keeps %s %s public', (path, method) => {
     expect(usesBearer(operation(path, method))).toBe(false);

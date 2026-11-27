@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -22,6 +23,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -44,14 +46,18 @@ export class HistoryController {
   constructor(private readonly historyService: HistoryService) {}
 
   @Get()
+  @ApiSecurity({})
+  @ApiBearerAuth()
   @ApiOperation({
-    summary: 'List verified history records for a village',
-    description: 'Only VERIFIED records are included in this public timeline.',
+    summary: 'List history records for a village',
+    description:
+      'Defaults to VERIFIED records, which are public. ' +
+      'PENDING and REJECTED filters require an EDITOR, VERIFIER, or ADMIN access token.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiExtraModels(HistoryRecordResponseDto)
   @ApiOkResponse({
-    description: 'Paginated verified history records returned',
+    description: 'Paginated history records returned',
     schema: {
       type: 'object',
       required: ['data', 'meta'],
@@ -79,12 +85,19 @@ export class HistoryController {
   @ApiBadRequestResponse({
     description: 'Invalid village ID or query parameters',
   })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required for PENDING or REJECTED records',
+  })
+  @ApiForbiddenResponse({
+    description: 'VIEWER role cannot view PENDING or REJECTED records',
+  })
   @ApiNotFoundResponse({ description: 'Village not found' })
   list(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Query() query: HistoryRecordQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
   ): Promise<Paginated<HistoryRecordResponseDto>> {
-    return this.historyService.list(villageId, query);
+    return this.historyService.list(villageId, query, user);
   }
 
   @Get(':id')

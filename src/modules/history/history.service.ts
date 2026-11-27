@@ -1,8 +1,10 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,6 +15,8 @@ import {
 } from '../../common/database/pg-errors';
 import { ValidationException } from '../../common/errors/validation.exception';
 import { paginate, Paginated } from '../../common/pagination/paginated';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateHistoryRecordDto } from './dto/create-history-record.dto';
@@ -67,15 +71,19 @@ export class HistoryService {
   async list(
     villageId: string,
     query: HistoryRecordQueryDto,
+    user?: AuthenticatedUser,
   ): Promise<Paginated<HistoryRecordResponseDto>> {
+    const status = query.status ?? VerificationStatus.VERIFIED;
+    if (status !== VerificationStatus.VERIFIED) {
+      this.assertCanListUnverified(user);
+    }
+
     await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.historyRecords
       .createQueryBuilder('record')
       .where('record.villageId = :villageId', { villageId })
-      .andWhere('record.status = :status', {
-        status: VerificationStatus.VERIFIED,
-      });
+      .andWhere('record.status = :status', { status });
 
     if (query.type !== undefined) {
       queryBuilder.andWhere('record.type = :type', { type: query.type });
@@ -237,6 +245,17 @@ export class HistoryService {
       );
     }
     return record;
+  }
+
+  private assertCanListUnverified(user?: AuthenticatedUser): void {
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    if (![Role.EDITOR, Role.VERIFIER, Role.ADMIN].includes(user.role)) {
+      throw new ForbiddenException(
+        'Your role is not allowed to view unverified history records',
+      );
+    }
   }
 
   private async review(

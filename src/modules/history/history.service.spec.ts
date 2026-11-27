@@ -1,11 +1,15 @@
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { QueryFailedError, Repository } from 'typeorm';
 import { ValidationException } from '../../common/errors/validation.exception';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateHistoryRecordDto } from './dto/create-history-record.dto';
@@ -27,6 +31,12 @@ const REVIEWER_ID = '00000000-0000-4000-8000-000000000006';
 const OVERVIEW_CONSTRAINT = 'uq_history_records_village_overview';
 const createdAt = new Date('2026-01-01T00:00:00.000Z');
 const updatedAt = new Date('2026-01-02T00:00:00.000Z');
+
+const user = (role: Role): AuthenticatedUser => ({
+  id: REVIEWER_ID,
+  email: 'reviewer@example.test',
+  role,
+});
 
 const historyRecord = (
   overrides: Partial<HistoryRecord> = {},
@@ -286,6 +296,59 @@ describe('HistoryService', () => {
         status: VerificationStatus.VERIFIED,
         source: { id: SOURCE_ID, title: `Source ${SOURCE_ID}` },
       });
+    });
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'requires authentication to list %s records',
+      async (status) => {
+        await expect(
+          service.list(VILLAGE_ID, queryDto({ status })),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+        expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'denies VIEWER access to %s records',
+      async (status) => {
+        await expect(
+          service.list(VILLAGE_ID, queryDto({ status }), user(Role.VIEWER)),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([Role.EDITOR, Role.VERIFIER, Role.ADMIN])(
+      'allows %s to list unverified records',
+      async (role) => {
+        const query = queryDto({
+          status: VerificationStatus.PENDING,
+          type: HistoryRecordType.EVENT,
+        });
+
+        await service.list(VILLAGE_ID, query, user(role));
+
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          'record.status = :status',
+          { status: VerificationStatus.PENDING },
+        );
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          'record.type = :type',
+          { type: HistoryRecordType.EVENT },
+        );
+      },
+    );
+
+    it('allows VERIFIED records without authentication', async () => {
+      await service.list(
+        VILLAGE_ID,
+        queryDto({ status: VerificationStatus.VERIFIED }),
+      );
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'record.status = :status',
+        { status: VerificationStatus.VERIFIED },
+      );
     });
 
     it.each([HistoryRecordType.OVERVIEW, HistoryRecordType.EVENT])(

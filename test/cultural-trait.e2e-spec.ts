@@ -81,6 +81,9 @@ describe('Cultural Trait module (e2e)', () => {
   const culturalTraitsPath = (villageId = fixtureIds.village) =>
     `/api/v1/villages/${villageId}/cultural-traits`;
 
+  let viewer: TestCaller;
+  let editor: TestCaller;
+  let verifier: TestCaller;
   let admin: TestCaller;
 
   // Write endpoints need a token; ADMIN is allowed on all of them.
@@ -158,6 +161,9 @@ describe('Cultural Trait module (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    viewer = await callerWithRole(app, Role.VIEWER);
+    editor = await callerWithRole(app, Role.EDITOR);
+    verifier = await callerWithRole(app, Role.VERIFIER);
     admin = await callerWithRole(app, Role.ADMIN);
     dataSource = app.get(DataSource);
     culturalTraitService = app.get(CulturalTraitService);
@@ -475,7 +481,9 @@ describe('Cultural Trait module (e2e)', () => {
       status: VerificationStatus.VERIFIED,
     });
 
-    const response = await http().get(culturalTraitsPath()).expect(200);
+    const response = await request(app!.getHttpServer())
+      .get(culturalTraitsPath())
+      .expect(200);
     expect(response.body.data.map((trait: { id: string }) => trait.id)).toEqual(
       [verifiedId],
     );
@@ -492,7 +500,73 @@ describe('Cultural Trait module (e2e)', () => {
     expect(
       response.body.data.map((trait: { id: string }) => trait.id),
     ).not.toEqual(expect.arrayContaining([pendingId, rejectedId]));
+
+    const explicitVerified = await request(app!.getHttpServer())
+      .get(`${culturalTraitsPath()}?status=VERIFIED`)
+      .expect(200);
+    expect(
+      explicitVerified.body.data.map((trait: { id: string }) => trait.id),
+    ).toEqual([verifiedId]);
+
+    for (const caller of [viewer, editor, verifier, admin]) {
+      const roleResponse = await httpAs(app!, caller)
+        .get(`${culturalTraitsPath()}?status=VERIFIED`)
+        .expect(200);
+      expect(
+        roleResponse.body.data.map((trait: { id: string }) => trait.id),
+      ).toEqual([verifiedId]);
+    }
   });
+
+  it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+    'restricts %s cultural trait filters to EDITOR, VERIFIER, and ADMIN',
+    async (status) => {
+      if (!app) {
+        throw new Error(
+          'The Cultural Trait test application is not initialized',
+        );
+      }
+      const firstId = await insertCulturalTrait({
+        name: `A ${status} craft ${fixtureToken}`,
+        type: CulturalTraitType.CRAFT,
+        status,
+      });
+      await insertCulturalTrait({
+        name: `B ${status} craft ${fixtureToken}`,
+        type: CulturalTraitType.CRAFT,
+        status,
+      });
+      await insertCulturalTrait({
+        name: `C ${status} food ${fixtureToken}`,
+        type: CulturalTraitType.FOOD,
+        status,
+      });
+      const path = `${culturalTraitsPath()}?status=${status}&type=${CulturalTraitType.CRAFT}&page=1&limit=1`;
+
+      await request(app.getHttpServer()).get(path).expect(401);
+      await request(app.getHttpServer())
+        .get(path)
+        .set('x-role', Role.ADMIN)
+        .expect(401);
+      await httpAs(app, viewer).get(path).set('x-role', Role.ADMIN).expect(403);
+
+      for (const caller of [editor, verifier, admin]) {
+        const response = await httpAs(app, caller).get(path).expect(200);
+        expect(response.body.data).toHaveLength(1);
+        expect(response.body.data[0]).toMatchObject({
+          id: firstId,
+          status,
+          type: CulturalTraitType.CRAFT,
+        });
+        expect(response.body.meta).toMatchObject({
+          page: 1,
+          limit: 1,
+          total: 2,
+          totalPages: 2,
+        });
+      }
+    },
+  );
 
   it('creates, updates, and deletes Cultural Traits over HTTP', async () => {
     const created = await http()

@@ -1,14 +1,18 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryDeepPartialEntity, Repository } from 'typeorm';
 import { isForeignKeyViolation } from '../../common/database/pg-errors';
 import { paginate, Paginated } from '../../common/pagination/paginated';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateLandmarkDto } from './dto/create-landmark.dto';
@@ -65,15 +69,18 @@ export class LandmarkService {
   async list(
     villageId: string,
     query: LandmarkQueryDto,
+    user?: AuthenticatedUser,
   ): Promise<Paginated<LandmarkResponseDto>> {
-    await this.villages.ensureExists(villageId);
+    const status = query.status ?? VerificationStatus.VERIFIED;
+    if (status !== VerificationStatus.VERIFIED) {
+      this.assertCanListUnverified(user);
+    }
 
+    await this.villages.ensureExists(villageId);
     const queryBuilder = this.landmarks
       .createQueryBuilder('landmark')
       .where('landmark.villageId = :villageId', { villageId })
-      .andWhere('landmark.status = :status', {
-        status: VerificationStatus.VERIFIED,
-      });
+      .andWhere('landmark.status = :status', { status });
 
     if (query.type !== undefined) {
       queryBuilder.andWhere('landmark.type = :type', { type: query.type });
@@ -223,6 +230,17 @@ export class LandmarkService {
       );
     }
     return landmark;
+  }
+
+  private assertCanListUnverified(user?: AuthenticatedUser): void {
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    if (![Role.EDITOR, Role.VERIFIER, Role.ADMIN].includes(user.role)) {
+      throw new ForbiddenException(
+        'Your role is not allowed to view unverified landmarks',
+      );
+    }
   }
 
   private async review(

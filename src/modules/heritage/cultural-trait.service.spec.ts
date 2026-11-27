@@ -1,10 +1,14 @@
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
+  UnauthorizedException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { QueryFailedError, Repository } from 'typeorm';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreateCulturalTraitDto } from './dto/create-cultural-trait.dto';
@@ -28,6 +32,12 @@ const REVIEWER_ID = '00000000-0000-4000-8000-000000000006';
 const SOURCE_FOREIGN_KEY = 'cultural_traits_source_id_fkey';
 const createdAt = new Date('2026-01-01T00:00:00.000Z');
 const updatedAt = new Date('2026-01-02T00:00:00.000Z');
+
+const user = (role: Role): AuthenticatedUser => ({
+  id: REVIEWER_ID,
+  email: 'reviewer@example.test',
+  role,
+});
 
 const culturalTrait = (
   overrides: Partial<CulturalTrait> = {},
@@ -240,6 +250,59 @@ describe('CulturalTraitService', () => {
         status: VerificationStatus.VERIFIED,
         source: { id: SOURCE_ID, title: `Source ${SOURCE_ID}` },
       });
+    });
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'requires authentication to list %s cultural traits',
+      async (status) => {
+        await expect(
+          service.list(VILLAGE_ID, queryDto({ status })),
+        ).rejects.toBeInstanceOf(UnauthorizedException);
+        expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'denies VIEWER access to %s cultural traits',
+      async (status) => {
+        await expect(
+          service.list(VILLAGE_ID, queryDto({ status }), user(Role.VIEWER)),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([Role.EDITOR, Role.VERIFIER, Role.ADMIN])(
+      'allows %s to list unverified cultural traits',
+      async (role) => {
+        const query = queryDto({
+          status: VerificationStatus.PENDING,
+          type: CulturalTraitType.CRAFT,
+        });
+
+        await service.list(VILLAGE_ID, query, user(role));
+
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          'culturalTrait.status = :status',
+          { status: VerificationStatus.PENDING },
+        );
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          'culturalTrait.type = :type',
+          { type: CulturalTraitType.CRAFT },
+        );
+      },
+    );
+
+    it('allows VERIFIED cultural traits without authentication', async () => {
+      await service.list(
+        VILLAGE_ID,
+        queryDto({ status: VerificationStatus.VERIFIED }),
+      );
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'culturalTrait.status = :status',
+        { status: VerificationStatus.VERIFIED },
+      );
     });
 
     it.each(Object.values(CulturalTraitType))(

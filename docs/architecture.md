@@ -64,7 +64,7 @@ flowchart TB
     end
     subgraph Yahya
         GEO[geocoding<br/>Nominatim provider]
-        GEOG[geography]:::planned
+        GEOG[geography<br/>geocode · nearby villages]
         ECO[economy · facilities]:::planned
     end
 
@@ -77,9 +77,9 @@ flowchart TB
     HIS --> SRC
     HER --> VIL
     HER --> SRC
-    USR --> AUTH
-    GEOG -.-> GEO
-    GEOG -.-> VIL
+    AUTH --> USR
+    GEOG --> GEO
+    GEOG --> VIL
 
     classDef planned stroke-dasharray: 5 5,color:#888
 ```
@@ -187,8 +187,9 @@ sequenceDiagram
 | Conflicting data | A different value from another source becomes a **new record**, never an overwrite. Records are `PENDING → VERIFIED / REJECTED`, with the reviewer and the date. Public lists show `VERIFIED` records by default. Only `PENDING` records can be edited, and a verified record cannot be deleted | [verification](../src/modules/source/verification) |
 | Authentication | JWT access token (15 min) + rotated, single-use refresh token (7 days, stored hashed); argon2id passwords; login and register rate limited per IP | `auth` module, [ADR-002](adr/002-auth-and-token-strategy.md), [auth.md](auth.md) |
 | Authorization | Roles `ADMIN`, `EDITOR`, `VERIFIER`, `VIEWER`. Endpoints declare `@Roles(...)`; global guards return `401` without a token and `403` for a role that is not listed. Reviewers are taken from the token | `auth` module |
-| Native SQL | Used where a query is clearer or faster in SQL: village search (ranking across three name columns), population history (window function `LAG`) | `village-search.service.ts`, `population.service.ts` |
+| Native SQL | Used where a query is clearer or faster in SQL: village search (ranking across three name columns), population history (window function `LAG`), nearby villages (haversine distance in SQL) | `village-search.service.ts`, `population.service.ts`, `geography.service.ts` |
 | Search performance | GIN trigram indexes on normalized names; p95 470 ms → 22 ms under load | [performance/search.md](performance/search.md) |
+| Write performance | Existence checks use one indexed query instead of loading the village with joins; about 9% more throughput and p95 170 ms → 147 ms with 50 editors | [performance/write.md](performance/write.md) |
 | External API | Provider interface + Nominatim adapter; timeout, retry with backoff, `Retry-After`, 1 request/second, in-memory cache | `geocoding` module, [ADR-004](adr/004-geocoding-caching-strategy.md) |
 | Arabic text | Search folds letter variants (أ/إ/آ/ا, ة/ه, ى/ي) and Latin case, in SQL so it can be indexed | `village-search.service.ts` |
 

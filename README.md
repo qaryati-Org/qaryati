@@ -103,7 +103,7 @@ flowchart LR
     subgraph API["Qaryati API (NestJS)"]
         direction TB
         MW[middleware · global guard · validation · error filter]
-        M[feature modules<br/>village · source · population · history · heritage<br/>auth · users · geocoding]
+        M[feature modules<br/>village · source · population · history · heritage<br/>auth · users · geocoding · geography]
         MW --> M
     end
     API -- "TypeORM + native SQL" --> DB[(PostgreSQL 16)]

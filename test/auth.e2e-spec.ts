@@ -83,6 +83,18 @@ describe('Auth (e2e)', () => {
         .expect(409);
     });
 
+    it('returns 400 for a display name of only spaces', async () => {
+      const res = await http()
+        .post('/api/v1/auth/register')
+        .send({
+          email: 'e2e-auth-blank@example.com',
+          password,
+          displayName: '   ',
+        })
+        .expect(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
     it('returns 400 for a short password', async () => {
       const res = await http()
         .post('/api/v1/auth/register')

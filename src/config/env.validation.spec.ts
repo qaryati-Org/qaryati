@@ -6,6 +6,7 @@ describe('envValidationSchema geocoding settings', () => {
     DB_USER: 'qaryati',
     DB_PASSWORD: 'test-password',
     DB_NAME: 'qaryati',
+    GEOCODING_USER_AGENT: 'Qaryati/1.0 (contact: developer@example.com)',
   };
 
   it('provides defaults for geocoding settings', () => {
@@ -16,11 +17,20 @@ describe('envValidationSchema geocoding settings', () => {
     expect(error).toBeUndefined();
     expect(value).toMatchObject({
       GEOCODING_BASE_URL: 'https://nominatim.openstreetmap.org',
-      GEOCODING_USER_AGENT: 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
-      GEOCODING_TIMEOUT_MS: 5000,
+      GEOCODING_USER_AGENT: 'Qaryati/1.0 (contact: developer@example.com)',
+      GEOCODING_TIMEOUT_MS: 3000,
+      GEOCODING_MAX_RETRIES: 2,
       GEOCODING_CACHE_TTL_MS: 86400000,
       GEOCODING_CACHE_MAX_ENTRIES: 1000,
     });
+  });
+
+  it('rejects a missing User-Agent', () => {
+    const environment = { ...requiredDatabaseEnvironment };
+    Reflect.deleteProperty(environment, 'GEOCODING_USER_AGENT');
+    const { error } = envValidationSchema.validate(environment);
+
+    expect(error).toBeDefined();
   });
 
   it('rejects a non-empty User-Agent without contact information', () => {
@@ -33,7 +43,7 @@ describe('envValidationSchema geocoding settings', () => {
   });
 
   it('accepts a User-Agent with a contact email', () => {
-    const userAgent = 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)';
+    const userAgent = 'Qaryati/1.0 (contact: developer@example.com)';
     const { error, value } = envValidationSchema.validate({
       ...requiredDatabaseEnvironment,
       GEOCODING_USER_AGENT: userAgent,
@@ -61,6 +71,8 @@ describe('envValidationSchema geocoding settings', () => {
     ['GEOCODING_USER_AGENT', '   '],
     ['GEOCODING_TIMEOUT_MS', '0'],
     ['GEOCODING_TIMEOUT_MS', '1.5'],
+    ['GEOCODING_MAX_RETRIES', '-1'],
+    ['GEOCODING_MAX_RETRIES', '1.5'],
     ['GEOCODING_CACHE_TTL_MS', '-1'],
     ['GEOCODING_CACHE_TTL_MS', '2.5'],
     ['GEOCODING_CACHE_MAX_ENTRIES', '0'],

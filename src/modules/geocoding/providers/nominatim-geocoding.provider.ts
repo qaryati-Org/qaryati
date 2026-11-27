@@ -1,10 +1,16 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  HttpNetworkError,
+  HttpResponseError,
+} from '../http/http-client.errors';
 
 import {
   GeocodingProvider,
@@ -77,7 +83,17 @@ export class NominatimGeocodingProvider implements GeocodingProvider {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Nominatim geocoding request failed: ${message}`);
-      return null;
+
+      if (
+        error instanceof HttpNetworkError ||
+        (error instanceof HttpResponseError && error.status === 429)
+      ) {
+        throw new ServiceUnavailableException(
+          'Geocoding provider is unavailable',
+        );
+      }
+
+      throw new BadGatewayException('Geocoding provider request failed');
     }
 
     if (result !== null) {

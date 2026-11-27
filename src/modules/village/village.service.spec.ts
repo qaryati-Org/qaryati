@@ -36,6 +36,8 @@ describe('VillageService (writes)', () => {
       nameAr: 'برقة',
       nameEn: 'Burqa',
       nameOrigin: null,
+      latitude: null,
+      longitude: null,
       governorateId: NABLUS,
       municipalityId: NABLUS_COUNCIL.id,
       ...overrides,
@@ -85,9 +87,27 @@ describe('VillageService (writes)', () => {
         nameAr: 'برقة',
         nameEn: null,
         nameOrigin: null,
+        latitude: null,
+        longitude: null,
         governorateId: NABLUS,
         municipalityId: null,
       });
+    });
+
+    it('saves supplied coordinates', async () => {
+      await service.create({
+        nameAr: 'برقة',
+        governorateId: NABLUS,
+        latitude: 32.2211,
+        longitude: 35.2544,
+      });
+
+      expect(villages.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          latitude: 32.2211,
+          longitude: 35.2544,
+        }),
+      );
     });
 
     it('rejects an unknown governorate with 422', async () => {
@@ -147,7 +167,9 @@ describe('VillageService (writes)', () => {
     });
 
     it('changes only the fields that were sent and skips admin checks', async () => {
-      villages.findOneBy.mockResolvedValue(stored());
+      villages.findOneBy.mockResolvedValue(
+        stored({ latitude: 32.2211, longitude: 35.2544 }),
+      );
 
       await service.update('v-1', { nameOrigin: 'From "spring"' });
 
@@ -157,6 +179,8 @@ describe('VillageService (writes)', () => {
           nameAr: 'برقة',
           nameEn: 'Burqa',
           nameOrigin: 'From "spring"',
+          latitude: 32.2211,
+          longitude: 35.2544,
           municipalityId: NABLUS_COUNCIL.id,
         }),
       );
@@ -169,6 +193,18 @@ describe('VillageService (writes)', () => {
 
       expect(villages.save).toHaveBeenCalledWith(
         expect.objectContaining({ nameEn: null, municipalityId: null }),
+      );
+    });
+
+    it('updates coordinates and clears them with null', async () => {
+      villages.findOneBy.mockResolvedValue(
+        stored({ latitude: 32.2211, longitude: 35.2544 }),
+      );
+
+      await service.update('v-1', { latitude: null, longitude: 35.3 });
+
+      expect(villages.save).toHaveBeenCalledWith(
+        expect.objectContaining({ latitude: null, longitude: 35.3 }),
       );
     });
 

@@ -19,6 +19,12 @@ export class Village extends BaseEntity {
   @Column({ name: 'name_origin', type: 'text', nullable: true })
   nameOrigin!: string | null;
 
+  @Column({ name: 'latitude', type: 'double precision', nullable: true })
+  latitude!: number | null;
+
+  @Column({ name: 'longitude', type: 'double precision', nullable: true })
+  longitude!: number | null;
+
   @ManyToOne(() => Governorate, (g) => g.villages, {
     nullable: false,
     onDelete: 'RESTRICT',

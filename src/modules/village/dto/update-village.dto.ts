@@ -2,10 +2,13 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   ValidateIf,
 } from 'class-validator';
 import {
@@ -51,6 +54,30 @@ export class UpdateVillageDto {
   @IsNotEmpty()
   @MaxLength(NAME_ORIGIN_MAX_LENGTH)
   nameOrigin?: string | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: -90,
+    maximum: 90,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number | null;
+
+  @ApiPropertyOptional({
+    type: Number,
+    minimum: -180,
+    maximum: 180,
+    nullable: true,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number | null;
 
   @ApiPropertyOptional({
     format: 'uuid',

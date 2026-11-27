@@ -60,20 +60,20 @@ List endpoints return `{ data, meta }`, where `meta` contains `page`,
 
 | Method and route                                                 | Behavior                                         |
 | ---------------------------------------------------------------- | ------------------------------------------------ |
-| `GET /api/v1/villages/:villageId/population-records`             | Paginated records with optional filters          |
-| `GET /api/v1/villages/:villageId/population-records/:id`         | Get a record by ID                               |
+| `GET /api/v1/villages/:villageId/population-records`             | Paginated records with status-based access       |
+| `GET /api/v1/villages/:villageId/population-records/:id`         | Get a record by ID with status-based access      |
 | `POST /api/v1/villages/:villageId/population-records`            | Create a record; returns 201                     |
 | `PATCH /api/v1/villages/:villageId/population-records/:id`       | Update a PENDING record; returns 200             |
 | `DELETE /api/v1/villages/:villageId/population-records/:id`      | Delete a PENDING or REJECTED record; returns 204 |
-| `POST /api/v1/villages/:villageId/population-records/:id/verify` | Verify a record; returns 200                      |
-| `POST /api/v1/villages/:villageId/population-records/:id/reject` | Reject a record; returns 200                      |
+| `POST /api/v1/villages/:villageId/population-records/:id/verify` | Verify a record; returns 200                     |
+| `POST /api/v1/villages/:villageId/population-records/:id/reject` | Reject a record; returns 200                     |
 
 The list query accepts:
 
 - `status`: `PENDING`, `VERIFIED`, or `REJECTED`. It defaults to `VERIFIED`,
-  but callers can explicitly request either unverified status. This route is
-  public, so the status filter currently makes pending and rejected records
-  publicly retrievable.
+  and `VERIFIED` results are public. Explicitly requesting `PENDING` or
+  `REJECTED` requires authentication and one of the `EDITOR`, `VERIFIER`, or
+  `ADMIN` roles. Anonymous requests receive `401`; `VIEWER` receives `403`.
 - `year`: exact reference year from 1 through 2100.
 - `sourceId`: source UUID.
 - `page`: positive integer, default `1`.
@@ -84,10 +84,11 @@ The list query accepts:
 Records are sorted by the selected field and then by `id ASC`. The default
 order is `referenceYear ASC`, then `id ASC`.
 
-The GET-by-ID route scopes the lookup to both village and record ID, but does
-not filter by verification status. It currently returns `PENDING`,
-`VERIFIED`, or `REJECTED` records when they belong to the requested village.
-An unknown record or a record belonging to another village returns 404.
+The GET-by-ID route scopes the lookup to both village and record ID.
+`VERIFIED` records are public. `PENDING` and `REJECTED` records require an
+authenticated `EDITOR`, `VERIFIER`, or `ADMIN`; anonymous requests receive
+`401`, and `VIEWER` receives `403`. An unknown record or a record belonging to
+another village returns `404`.
 
 **Create** requires:
 
@@ -144,8 +145,11 @@ Relevant HTTP responses include:
   exist. A valid but unknown `sourceId` used as a list filter simply matches
   no records.
 - `401` for a missing or invalid access token on protected write and review
-  routes; `403` when an authenticated user's role is not allowed for that
-  route.
+  routes, or when requesting PENDING/REJECTED records without authentication;
+  `403` when an authenticated user's role is not allowed for that route,
+  including a VIEWER requesting unverified records. For an unauthorized
+  PENDING/REJECTED list request, authorization is checked before village
+  lookup; otherwise, an unknown village returns `404`.
 
 ## Verification workflow
 
@@ -173,24 +177,29 @@ body.
 
 ## Authentication and authorization
 
-Population list, GET-by-ID, and population-history routes are public. A
-missing token is allowed for these reads; a malformed or invalid bearer token
-returns `401`.
+Population-history and VERIFIED population-record reads are public. A missing
+token is allowed for these reads; a malformed or invalid bearer token returns
+`401`. Listing or looking up PENDING or REJECTED population records requires
+an authenticated user with an explicitly allowed role:
 
+- PENDING/REJECTED list filters and lookups require `EDITOR`, `VERIFIER`, or
+  `ADMIN`.
 - Create and update require `EDITOR` or `ADMIN`.
 - Delete requires `ADMIN`.
 - Verify and reject require `VERIFIER` or `ADMIN`.
 
 Protected routes return `401` when the access token is missing or invalid, and
 `403` when an authenticated user does not have a role listed for that route.
-Roles are checked against each endpoint's `@Roles` declaration.
+For unverified population reads, the service checks the authenticated user
+from the JWT and applies the same status-specific role rules; verified reads
+remain public.
 
 ## Testing
 
 Run the Population unit tests with:
 
 ```bash
-npm test -- --runInBand src/modules/population/population.service.spec.ts src/modules/population/dto/population-review.dto.spec.ts
+npm test -- --runInBand src/modules/population/population.controller.spec.ts src/modules/population/population.service.spec.ts src/modules/population/dto/population-review.dto.spec.ts
 ```
 
 Run the Population PostgreSQL E2E tests with:

@@ -150,6 +150,9 @@ describe('Population history (e2e)', () => {
       ),
     ).toEqual([1997, 2007, 2017, 2022]);
     expect(
+      response.body.data.map((record: { value: number }) => record.value),
+    ).toEqual([1200, 1500, 1900, 1700]);
+    expect(
       response.body.data.map(
         (record: {
           previousReferenceYear: number | null;

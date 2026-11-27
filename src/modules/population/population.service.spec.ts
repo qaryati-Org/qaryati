@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { ValidationException } from '../../common/errors/validation.exception';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { SourceService } from '../source/source.service';
 import { canTransition, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
@@ -27,6 +29,11 @@ const SOURCE_ID = '00000000-0000-4000-8000-000000000003';
 const OTHER_SOURCE_ID = '00000000-0000-4000-8000-000000000004';
 const RECORD_ID = '00000000-0000-4000-8000-000000000005';
 const REVIEWER_ID = '00000000-0000-4000-8000-000000000006';
+const userFor = (role: Role): AuthenticatedUser => ({
+  id: REVIEWER_ID,
+  email: `${role.toLowerCase()}@example.test`,
+  role,
+});
 const DUPLICATE_CONSTRAINT = 'uq_population_records_village_year_value_source';
 const createdAt = new Date('2026-01-01T00:00:00.000Z');
 const updatedAt = new Date('2026-01-02T00:00:00.000Z');
@@ -361,7 +368,7 @@ describe('PopulationService', () => {
   });
 
   describe('findOne', () => {
-    it('searches by both record ID and village ID and maps the record', async () => {
+    it('searches by both IDs and maps an authorized unverified record', async () => {
       const record = populationRecord({
         village: { id: VILLAGE_ID },
         source: { id: SOURCE_ID },
@@ -369,7 +376,11 @@ describe('PopulationService', () => {
       });
       repository.findOneBy.mockResolvedValue(record);
 
-      const result = await service.findOne(VILLAGE_ID, RECORD_ID);
+      const result = await service.findOne(
+        VILLAGE_ID,
+        RECORD_ID,
+        userFor(Role.EDITOR),
+      );
 
       expect(repository.findOneBy).toHaveBeenCalledWith({
         id: RECORD_ID,
@@ -417,6 +428,54 @@ describe('PopulationService', () => {
         villageId: VILLAGE_ID,
       });
     });
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'requires authentication to return %s records',
+      async (status) => {
+        repository.findOneBy.mockResolvedValue(populationRecord({ status }));
+
+        await expect(
+          service.findOne(VILLAGE_ID, RECORD_ID),
+        ).rejects.toMatchObject({ status: 401 });
+      },
+    );
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'forbids VIEWER access to %s records',
+      async (status) => {
+        repository.findOneBy.mockResolvedValue(populationRecord({ status }));
+
+        await expect(
+          service.findOne(VILLAGE_ID, RECORD_ID, userFor(Role.VIEWER)),
+        ).rejects.toMatchObject({ status: 403 });
+      },
+    );
+
+    it.each([Role.EDITOR, Role.VERIFIER, Role.ADMIN])(
+      'allows %s to read unverified records',
+      async (role) => {
+        repository.findOneBy.mockResolvedValue(
+          populationRecord({ status: VerificationStatus.REJECTED }),
+        );
+
+        await expect(
+          service.findOne(VILLAGE_ID, RECORD_ID, userFor(role)),
+        ).resolves.toMatchObject({ status: VerificationStatus.REJECTED });
+      },
+    );
+
+    it.each([undefined, userFor(Role.VIEWER)])(
+      'keeps VERIFIED records public for caller %s',
+      async (user) => {
+        repository.findOneBy.mockResolvedValue(
+          populationRecord({ status: VerificationStatus.VERIFIED }),
+        );
+
+        await expect(
+          service.findOne(VILLAGE_ID, RECORD_ID, user),
+        ).resolves.toMatchObject({ status: VerificationStatus.VERIFIED });
+      },
+    );
   });
 
   describe('history', () => {
@@ -975,11 +1034,51 @@ describe('PopulationService', () => {
     it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
       'uses the explicitly requested %s status',
       async (status) => {
-        await service.list(VILLAGE_ID, queryDto({ status }));
+        await service.list(
+          VILLAGE_ID,
+          queryDto({ status }),
+          userFor(Role.EDITOR),
+        );
 
         expect(queryBuilder.andWhere).toHaveBeenCalledWith(
           'record.status = :status',
           { status },
+        );
+      },
+    );
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'rejects anonymous requests for %s before querying',
+      async (status) => {
+        await expect(
+          service.list(VILLAGE_ID, queryDto({ status })),
+        ).rejects.toMatchObject({ status: 401 });
+        expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'rejects VIEWER requests for %s before querying',
+      async (status) => {
+        await expect(
+          service.list(VILLAGE_ID, queryDto({ status }), userFor(Role.VIEWER)),
+        ).rejects.toMatchObject({ status: 403 });
+        expect(repository.createQueryBuilder).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([Role.EDITOR, Role.VERIFIER, Role.ADMIN])(
+      'allows %s to explicitly list unverified records',
+      async (role) => {
+        await service.list(
+          VILLAGE_ID,
+          queryDto({ status: VerificationStatus.REJECTED }),
+          userFor(role),
+        );
+
+        expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+          'record.status = :status',
+          { status: VerificationStatus.REJECTED },
         );
       },
     );

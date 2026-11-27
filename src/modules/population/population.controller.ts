@@ -12,6 +12,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -22,6 +23,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiParam,
+  ApiSecurity,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -49,10 +51,12 @@ export class PopulationController {
   constructor(private readonly populationService: PopulationService) {}
 
   @Get()
+  @ApiSecurity({})
+  @ApiBearerAuth()
   @ApiOperation({
     summary: 'List population records for a village',
     description:
-      'Results default to VERIFIED records unless status is specified.',
+      'Results default to VERIFIED records. PENDING and REJECTED filters require an EDITOR, VERIFIER, or ADMIN access token.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiExtraModels(PopulationRecordResponseDto)
@@ -86,15 +90,28 @@ export class PopulationController {
     description: 'Invalid village ID or query parameters',
   })
   @ApiNotFoundResponse({ description: 'Village not found' })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required to request unverified records',
+  })
+  @ApiForbiddenResponse({
+    description: 'Role is not permitted to request unverified records',
+  })
   list(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Query() query: PopulationRecordQueryDto,
+    @CurrentUser() user: AuthenticatedUser | undefined,
   ): Promise<Paginated<PopulationRecordResponseDto>> {
-    return this.populationService.list(villageId, query);
+    return this.populationService.list(villageId, query, user);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a population record by ID for a village' })
+  @ApiSecurity({})
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get a population record by ID for a village',
+    description:
+      'VERIFIED records are public. PENDING and REJECTED records require an EDITOR, VERIFIER, or ADMIN access token.',
+  })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
   @ApiOkResponse({ type: PopulationRecordResponseDto })
@@ -102,11 +119,18 @@ export class PopulationController {
   @ApiNotFoundResponse({
     description: 'Village or population record not found',
   })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required to access unverified records',
+  })
+  @ApiForbiddenResponse({
+    description: 'Role is not permitted to access unverified records',
+  })
   findOne(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthenticatedUser | undefined,
   ): Promise<PopulationRecordResponseDto> {
-    return this.populationService.findOne(villageId, id);
+    return this.populationService.findOne(villageId, id, user);
   }
 
   @Post()

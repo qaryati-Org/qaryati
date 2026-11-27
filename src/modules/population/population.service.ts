@@ -1,14 +1,18 @@
 import {
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, QueryFailedError, Repository } from 'typeorm';
 import { isUniqueViolation } from '../../common/database/pg-errors';
 import { paginate, Paginated } from '../../common/pagination/paginated';
 import { ValidationException } from '../../common/errors/validation.exception';
+import type { AuthenticatedUser } from '../auth';
+import { Role } from '../auth';
 import { assertTransition, SourceService, VerificationStatus } from '../source';
 import { VillageService } from '../village/village.service';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
@@ -106,15 +110,19 @@ export class PopulationService {
   async list(
     villageId: string,
     query: PopulationRecordQueryDto,
+    user?: AuthenticatedUser,
   ): Promise<Paginated<PopulationRecordResponseDto>> {
+    const status = query.status ?? VerificationStatus.VERIFIED;
+    if (status !== VerificationStatus.VERIFIED) {
+      this.assertCanViewUnverified(user);
+    }
+
     await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.populationRecords
       .createQueryBuilder('record')
       .where('record.villageId = :villageId', { villageId })
-      .andWhere('record.status = :status', {
-        status: query.status ?? VerificationStatus.VERIFIED,
-      });
+      .andWhere('record.status = :status', { status });
 
     if (query.year !== undefined) {
       queryBuilder.andWhere('record.referenceYear = :year', {
@@ -182,8 +190,12 @@ export class PopulationService {
   async findOne(
     villageId: string,
     recordId: string,
+    user?: AuthenticatedUser,
   ): Promise<PopulationRecordResponseDto> {
     const record = await this.getOrFail(villageId, recordId);
+    if (record.status !== VerificationStatus.VERIFIED) {
+      this.assertCanViewUnverified(user);
+    }
     return PopulationRecordResponseDto.from(record);
   }
 
@@ -292,6 +304,17 @@ export class PopulationService {
       );
     }
     return record;
+  }
+
+  private assertCanViewUnverified(user?: AuthenticatedUser): void {
+    if (!user) {
+      throw new UnauthorizedException('Authentication required');
+    }
+    if (![Role.EDITOR, Role.VERIFIER, Role.ADMIN].includes(user.role)) {
+      throw new ForbiddenException(
+        'Your role is not allowed to view unverified population records',
+      );
+    }
   }
 
   private async review(

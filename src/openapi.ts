@@ -8,8 +8,8 @@ export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
     .setTitle('Qaryati API')
     .setDescription('Palestinian Villages Knowledge Platform')
     .setVersion('1.0')
-    // Endpoints with @Roles(...) reference this scheme, so Swagger UI sends
-    // the token entered under "Authorize" to them.
+    // Protected endpoints and optionally authenticated reads reference this
+    // scheme so Swagger UI sends the token entered under "Authorize".
     .addBearerAuth()
     .build();
   return SwaggerModule.createDocument(app, config);

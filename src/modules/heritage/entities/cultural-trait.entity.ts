@@ -10,6 +10,19 @@ export enum CulturalTraitType {
 @Entity('cultural_traits')
 @Index('idx_cultural_traits_village_id', ['villageId'])
 @Index('idx_cultural_traits_source_id', ['sourceId'])
+@Index('idx_cultural_traits_village_status_name_id', [
+  'villageId',
+  'status',
+  'name',
+  'id',
+])
+@Index('idx_cultural_traits_village_status_type_name_id', [
+  'villageId',
+  'status',
+  'type',
+  'name',
+  'id',
+])
 export class CulturalTrait extends VerifiableEntity {
   @ManyToOne('Village', { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({

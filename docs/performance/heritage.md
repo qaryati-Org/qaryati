@@ -1,11 +1,12 @@
 # Performance: public Heritage listings
 
-**Status: 60-record-per-village-per-type baseline benchmark completed on
-November 27, 2026.** This is a baseline, not an optimization comparison.
+**Status:** The original 60-record-per-village-per-type baseline remains
+documented below. A single before/after run on 20,000 records is now recorded;
+it does not establish a proven or repeatable optimization.
 
-The run used Grafana k6 v2.4.0 on Windows against the local Qaryati NestJS
-production build. PostgreSQL 16 ran in Docker on port 5433, using the isolated
-`qaryati_perf` database.
+The original 60-record baseline used Grafana k6 v2.4.0 on Windows against the
+local Qaryati NestJS production build. PostgreSQL 16 ran in Docker on port
+5433, using the isolated `qaryati_perf` database.
 
 The benchmark covers the public, paginated list endpoints:
 
@@ -171,7 +172,7 @@ for other local performance tests.
 
 The Landmark and Cultural Trait list queries filter on `village_id` and
 `status`, optionally filter on `type`, order by `name` and then `id`, and use
-offset/limit pagination. The migration adds these B-tree indexes:
+offset/limit pagination. Four composite B-tree indexes were added:
 
 | Table | Index | Columns |
 | --- | --- | --- |
@@ -187,23 +188,37 @@ type equality filter before the same ordering. Type-filtered requests make up
 the first index cannot efficiently seek by type. Existing indexes are
 preserved.
 
-## Results: 20,000-record pre-index baseline
+## Results: 20,000-record before/after comparison
 
-The following results were recorded on the 20,000-record synthetic dataset
-before these indexes were added. They are the comparison baseline, not
-evidence of an improvement:
+Both runs used the isolated `qaryati_perf` database, five synthetic villages,
+2,000 VERIFIED landmarks and 2,000 VERIFIED cultural traits per village
+(20,000 Heritage records total), and `k6/heritage-read-heavy.js` at 50 VUs.
+The before run was without the four indexes; the after run was with them.
 
-| Metric | Pre-index result |
-| --- | ---: |
-| Requests | 16,632 |
-| Throughput | 207.24 requests/second |
-| Failed requests | 0 |
-| Overall p95 | 19.17 ms |
-| Landmark p95 | 19.12 ms |
-| Cultural Trait p95 | 19.21 ms |
+| Metric | Before indexes | After indexes | Change |
+| --- | ---: | ---: | ---: |
+| Requests | 16,632 | 16,837 | +1.2% |
+| Throughput | 207.2353379861 req/s | 210.4330196492 req/s | +1.5% |
+| Failed request rate | 0% | 0% | Unchanged (0 percentage points) |
+| Average latency | 10.083289 ms | 7.504235 ms | -25.6% |
+| p50 latency | 8.2332 ms | 5.4178 ms | -34.2% |
+| Overall p95 latency | 19.173045 ms | 11.6179 ms | -39.4% |
+| Overall p99 latency | 32.45692 ms | 29.708644 ms | -8.5% |
+| Landmark p95 latency | 19.115145 ms | 11.76258 ms | -38.5% |
+| Cultural Trait p95 latency | 19.214845 ms | 11.42867 ms | -40.5% |
 
-An after-index benchmark on the same dataset and workload is still required.
-Until that comparison is run, performance improvements are unproven.
+Percentage changes are calculated as `(after - before) / before`; negative
+latency changes indicate lower measured latency. The failed request rate
+remained zero in both runs, so a percentage change from the zero baseline is
+undefined.
+
+Some subgroup p99 results worsened. For example, type-filtered Landmark p99
+increased from 30.25809 ms before indexing to 52.406 ms after indexing
+(+73.2%).
+
+These are single before/after runs. They do not prove that the indexes caused
+the observed changes or that the results are repeatable. Repeated, comparable
+benchmark runs are needed before drawing performance conclusions.
 
 ## Results: 60-record-per-village-per-type baseline
 
@@ -252,8 +267,8 @@ Landmark and Cultural Trait verify/reject routes are enabled and require an
 authenticated `VERIFIER` or `ADMIN`; they are not part of this benchmark's
 read workload.
 
-The measured dataset is deliberately limited to five synthetic villages and
-300 records of each Heritage type. These results may not generalize to larger
-or different datasets or deployments. Results also depend on the machine,
-PostgreSQL and API configuration, and whether k6, the API, and the database
-share a host.
+The original small benchmark used five synthetic villages and 300 records of
+each Heritage type; the before/after comparison used 20,000 Heritage records.
+Neither result necessarily generalizes to larger or different datasets or
+deployments. Results also depend on the machine, PostgreSQL and API
+configuration, and whether k6, the API, and the database share a host.

@@ -15,6 +15,7 @@ import { HistoryModule } from './modules/history/history.module';
 import { HeritageModule } from './modules/heritage/heritage.module';
 import { CulturalTraitModule } from './modules/heritage/cultural-trait.module';
 import { GeocodingModule } from './modules/geocoding/geocoding.module';
+import { GeographyModule } from './modules/geography/geography.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { GeocodingModule } from './modules/geocoding/geocoding.module';
     HeritageModule,
     CulturalTraitModule,
     GeocodingModule,
+    GeographyModule,
   ],
 })
 export class AppModule {}

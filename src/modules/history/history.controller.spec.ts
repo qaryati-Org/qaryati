@@ -134,7 +134,7 @@ describe('HistoryController with role enforcement', () => {
     expect(historyService.findOne).not.toHaveBeenCalled();
   });
 
- it('allows CRUD routes as ADMIN', async () => {
+  it('allows CRUD routes as ADMIN', async () => {
     await request(app.getHttpServer())
       .post(BASE_PATH)
       .set('Authorization', bearerFor(Role.ADMIN))

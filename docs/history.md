@@ -67,9 +67,11 @@ All routes use the `/api/v1` prefix. Village and record path IDs are UUIDs.
 
 `GET /api/v1/villages/:villageId/history`
 
-This route is public and returns **VERIFIED records only**. It supports the
-optional `type` filter (`OVERVIEW` or `EVENT`) and pagination parameters
-`page` (default `1`) and `limit` (default `20`, maximum `100`). Sorting is
+These GET routes are public and do not require a token; a malformed or
+invalid supplied bearer token returns `401`. The list returns **VERIFIED
+records only**. It supports the optional `type` filter (`OVERVIEW` or `EVENT`)
+and pagination parameters `page` (default `1`) and `limit` (default `20`,
+maximum `100`). Sorting is
 fixed: `startYear ASC NULLS FIRST`, then `id ASC`; `sort` may only be
 `startYear` and `order` may only be `asc`. A client-supplied `status` filter
 is rejected, so pending and rejected records cannot be requested.
@@ -107,12 +109,10 @@ The current CRUD routes are:
 - `DELETE /api/v1/villages/:villageId/history/:id` — deletes a `PENDING` or
   `REJECTED` record and returns `204`. Verified records cannot be deleted.
 
-JWT authentication is available through the global `JwtAuthGuard`: requests
-without an Authorization header are allowed as anonymous, while malformed or
-invalid bearer tokens return `401`. These CRUD routes have `@Roles` metadata,
-but the global `RolesGuard` is still permissive and does not enforce roles.
-They are therefore reachable without authentication; do not rely on the
-`@Roles` annotations as an access control boundary.
+Creating and updating history records require the `EDITOR` or `ADMIN` role;
+deleting requires `ADMIN`. These routes require a valid access token and
+return `401` when it is missing or invalid, or `403` when the authenticated
+user does not have an allowed role.
 
 Request fields:
 
@@ -134,26 +134,23 @@ and the nested source provenance object described above.
 Important errors include `400` for invalid UUIDs, request fields, query
 parameters, or year ranges; `404` for an unknown village or record; `409` for
 duplicate overviews, forbidden state changes, or a concurrent write conflict;
-and `422` for an unknown source. CRUD `POST`, `PATCH`, and `DELETE` do not
-currently return `401` or `403` for missing roles because the global guard is
-permissive.
+`422` for an unknown source; `401` for a missing or invalid access token on
+protected routes; and `403` when an authenticated user lacks the role required
+by a protected route.
 
 ### Verify and reject
 
 - `POST /api/v1/villages/:villageId/history/:id/verify`
 - `POST /api/v1/villages/:villageId/history/:id/reject`
 
-JWT authentication is available, but the review controller does not yet use
-the authenticated user as the trusted reviewer. Both HTTP review routes
-intentionally return `401` until role enforcement and reviewer identity are
-connected. They have a History-specific guard, and the controller does not
-fabricate a reviewer identity or invoke the review service methods. The
-service implements and tests the complete verification workflow
-independently; see [Verification workflow](#verification-workflow).
-When the HTTP routes are safely enabled, verify will accept an optional
-`reviewNote` (maximum 1,000 characters; explicit `null` is invalid), and reject
-will require a nonempty, non-whitespace `reviewNote` (maximum 1,000
-characters).
+Both routes require the `VERIFIER` or `ADMIN` role and return `200` on
+success. They return `401` for a missing or invalid access token and `403`
+for an authenticated user without an allowed role. The controller derives
+the reviewer ID from the authenticated user and passes it to the service;
+client-supplied `reviewerId` or `reviewedById` values are not accepted.
+Verify accepts an optional `reviewNote` (maximum 1,000 characters; explicit
+`null` is invalid), and reject requires a nonempty, non-whitespace
+`reviewNote` (maximum 1,000 characters).
 
 ## Verification workflow
 

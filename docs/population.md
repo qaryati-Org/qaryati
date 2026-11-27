@@ -65,8 +65,8 @@ List endpoints return `{ data, meta }`, where `meta` contains `page`,
 | `POST /api/v1/villages/:villageId/population-records`            | Create a record; returns 201                     |
 | `PATCH /api/v1/villages/:villageId/population-records/:id`       | Update a PENDING record; returns 200             |
 | `DELETE /api/v1/villages/:villageId/population-records/:id`      | Delete a PENDING or REJECTED record; returns 204 |
-| `POST /api/v1/villages/:villageId/population-records/:id/verify` | Currently returns 401                            |
-| `POST /api/v1/villages/:villageId/population-records/:id/reject` | Currently returns 401                            |
+| `POST /api/v1/villages/:villageId/population-records/:id/verify` | Verify a record; returns 200                      |
+| `POST /api/v1/villages/:villageId/population-records/:id/reject` | Reject a record; returns 200                      |
 
 The list query accepts:
 
@@ -143,7 +143,9 @@ Relevant HTTP responses include:
 - `422` when create or update supplies a valid source UUID that does not
   exist. A valid but unknown `sourceId` used as a list filter simply matches
   no records.
-- `401` from the verify and reject HTTP routes, which are currently blocked.
+- `401` for a missing or invalid access token on protected write and review
+  routes; `403` when an authenticated user's role is not allowed for that
+  route.
 
 ## Verification workflow
 
@@ -161,22 +163,27 @@ A concurrent status change or a conflicting verified record returns `409`.
 Only PENDING records can be edited; VERIFIED records cannot be deleted, while
 PENDING and REJECTED records can be deleted.
 
-The service implements and tests review operations, but the HTTP verify and
-reject handlers use a Population-specific guard that always returns `401`.
-Their request DTOs define an optional `reviewNote` (maximum 1,000 characters)
-for verification and a required non-whitespace `reviewNote` (maximum 1,000
-characters) for rejection; the HTTP handlers do not currently process these
-bodies.
+The HTTP verify and reject endpoints are enabled for callers with the
+`VERIFIER` or `ADMIN` role. Verification accepts an optional `reviewNote`
+(maximum 1,000 characters); rejection requires a non-whitespace `reviewNote`
+(maximum 1,000 characters). The controller derives the reviewer ID from the
+authenticated user and passes it to the service. Reviewer identity fields
+such as `reviewerId` and `reviewedById` are not accepted from the request
+body.
 
-## Access limitations
+## Authentication and authorization
 
-Population read routes are public. Write routes have `@Roles` metadata, but
-the global `RolesGuard` currently returns `true` without checking roles.
-The global JWT guard permits requests without an Authorization header and
-rejects malformed or invalid bearer tokens with `401`. As a result, create,
-update, and delete currently do not enforce their declared editor or
-administrator roles and can be called anonymously. Do not treat the
-`@Roles` metadata as an authorization boundary.
+Population list, GET-by-ID, and population-history routes are public. A
+missing token is allowed for these reads; a malformed or invalid bearer token
+returns `401`.
+
+- Create and update require `EDITOR` or `ADMIN`.
+- Delete requires `ADMIN`.
+- Verify and reject require `VERIFIER` or `ADMIN`.
+
+Protected routes return `401` when the access token is missing or invalid, and
+`403` when an authenticated user does not have a role listed for that route.
+Roles are checked against each endpoint's `@Roles` declaration.
 
 ## Testing
 

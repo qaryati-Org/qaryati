@@ -106,15 +106,18 @@ is not itself the requested resource. A valid but unknown `sourceId` in
 those operations is reported as `422 Unprocessable Entity`, rather than
 `404`.
 
-## Access limitations
+## Authentication and authorization
 
-Read endpoints have no role metadata and are public. Create, update, and
-delete declare `@Roles` metadata, but the global `RolesGuard` currently
-allows every request without checking the required roles. The global JWT
-guard permits requests without an Authorization header and rejects malformed
-or invalid bearer tokens with `401`. Consequently, source writes are
-currently reachable anonymously; the declared roles are not an enforced
-permission check.
+List and lookup endpoints are public. A missing token is allowed for these
+reads; a malformed or invalid bearer token returns `401`.
+
+- Create and update require `EDITOR` or `ADMIN`.
+- Delete requires `ADMIN`.
+
+Write routes return `401` when the access token is missing or invalid, and
+`403` when an authenticated user does not have a role listed for the route.
+These permissions are enforced by the global `RolesGuard` using each
+endpoint's `@Roles` declaration.
 
 ## Testing
 

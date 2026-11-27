@@ -1,5 +1,8 @@
 import Joi from 'joi';
 
+export const DEV_ONLY_JWT_SECRET =
+  'dev-only-jwt-secret-never-use-in-production';
+
 // Fail fast on startup if required configuration is missing or invalid.
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
@@ -50,4 +53,20 @@ export const envValidationSchema = Joi.object({
   GEOCODING_TIMEOUT_MS: Joi.number().integer().positive().default(5000),
   GEOCODING_CACHE_TTL_MS: Joi.number().integer().positive().default(86400000),
   GEOCODING_CACHE_MAX_ENTRIES: Joi.number().integer().positive().default(1000),
-});
+
+  // Production must set real secrets. Development and test fall back to a
+  // fixed dev-only value so teammates' existing .env files keep working.
+  JWT_ACCESS_SECRET: Joi.string()
+    .min(32)
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required(),
+      otherwise: Joi.optional().default(DEV_ONLY_JWT_SECRET),
+    }),
+  JWT_ACCESS_TTL_SECONDS: Joi.number().integer().min(60).default(900),
+  JWT_REFRESH_TTL_SECONDS: Joi.number().integer().min(60).default(604800),
+
+  // Optional first admin, created on startup if no user has this email yet.
+  ADMIN_EMAIL: Joi.string().email(),
+  ADMIN_PASSWORD: Joi.string().min(12).max(128),
+}).and('ADMIN_EMAIL', 'ADMIN_PASSWORD');

@@ -365,6 +365,95 @@ describe('HistoryService', () => {
     });
   });
 
+  describe('findOne', () => {
+    it('returns a VERIFIED record with source provenance', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        historyRecord({ status: VerificationStatus.VERIFIED }),
+      );
+
+      const result = await service.findOne(VILLAGE_ID, RECORD_ID);
+
+      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: RECORD_ID,
+        villageId: VILLAGE_ID,
+        status: VerificationStatus.VERIFIED,
+      });
+      expect(result).toMatchObject({
+        id: RECORD_ID,
+        status: VerificationStatus.VERIFIED,
+        source: { id: SOURCE_ID, title: `Source ${SOURCE_ID}` },
+      });
+    });
+
+    it('returns 404 when the record does not exist', async () => {
+      await expect(
+        service.findOne(VILLAGE_ID, RECORD_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns 404 when the record belongs to another village', async () => {
+      repository.findOneBy.mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOne(VILLAGE_ID, RECORD_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: RECORD_ID,
+        villageId: VILLAGE_ID,
+        status: VerificationStatus.VERIFIED,
+      });
+    });
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'returns 404 for a %s record',
+      async (status) => {
+        const unverifiedRecord = historyRecord({ status });
+        repository.findOneBy.mockImplementationOnce(
+          (criteria: Partial<HistoryRecord>) =>
+            Promise.resolve(
+              unverifiedRecord.id === criteria.id &&
+                unverifiedRecord.villageId === criteria.villageId &&
+                unverifiedRecord.status === criteria.status
+                ? unverifiedRecord
+                : null,
+            ),
+        );
+
+        await expect(
+          service.findOne(VILLAGE_ID, RECORD_ID),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(repository.findOneBy).toHaveBeenCalledWith({
+          id: RECORD_ID,
+          villageId: VILLAGE_ID,
+          status: VerificationStatus.VERIFIED,
+        });
+      },
+    );
+
+    it('preserves village-not-found behavior', async () => {
+      villages.findOne.mockRejectedValueOnce(
+        new NotFoundException('Village not found'),
+      );
+
+      await expect(service.findOne(VILLAGE_ID, RECORD_ID)).rejects.toThrow(
+        'Village not found',
+      );
+      expect(repository.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it('preserves the unavailable-source error', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        historyRecord({ status: VerificationStatus.VERIFIED }),
+      );
+      sources.findByIds.mockResolvedValueOnce([]);
+
+      await expect(
+        service.findOne(VILLAGE_ID, RECORD_ID),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+  });
+
   describe('update', () => {
     it('updates only supplied editable fields with a PENDING condition', async () => {
       const initial = historyRecord({

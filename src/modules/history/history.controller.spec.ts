@@ -22,6 +22,7 @@ describe('HistoryController with role enforcement', () => {
   let app: INestApplication<App>;
   let historyService: {
     list: jest.Mock;
+    findOne: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
     remove: jest.Mock;
@@ -59,6 +60,9 @@ describe('HistoryController with role enforcement', () => {
         data: [],
         meta: { page: 1, limit: 20, total: 0, totalPages: 0 },
       }),
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ ...responseDto, status: 'VERIFIED' }),
       create: jest.fn().mockResolvedValue(responseDto),
       update: jest.fn().mockResolvedValue(responseDto),
       remove: jest.fn().mockResolvedValue(undefined),
@@ -109,6 +113,25 @@ describe('HistoryController with role enforcement', () => {
       .expect(400);
 
     expect(historyService.list).not.toHaveBeenCalled();
+  });
+
+  it('gets a history record by ID and delegates both route parameters', async () => {
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}/${RECORD_ID}`)
+      .expect(200);
+
+    expect(historyService.findOne).toHaveBeenCalledWith(VILLAGE_ID, RECORD_ID);
+  });
+
+  it('rejects invalid UUIDs for the public history lookup', async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/villages/not-a-uuid/history/${RECORD_ID}`)
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`${BASE_PATH}/not-a-uuid`)
+      .expect(400);
+
+    expect(historyService.findOne).not.toHaveBeenCalled();
   });
 
   it('allows CRUD routes as ADMIN', async () => {

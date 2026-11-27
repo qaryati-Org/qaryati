@@ -87,6 +87,22 @@ export class LandmarkController {
     return this.landmarkService.list(villageId, query);
   }
 
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a verified landmark' })
+  @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
+  @ApiParam({ name: 'id', type: String, description: 'Landmark UUID' })
+  @ApiOkResponse({ type: LandmarkResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid village or record ID' })
+  @ApiNotFoundResponse({
+    description: 'Village or verified landmark not found',
+  })
+  findOne(
+    @Param('villageId', new ParseUUIDPipe()) villageId: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<LandmarkResponseDto> {
+    return this.landmarkService.findOne(villageId, id);
+  }
+
   @Post()
   @Roles(Role.EDITOR, Role.ADMIN)
   @ApiOperation({

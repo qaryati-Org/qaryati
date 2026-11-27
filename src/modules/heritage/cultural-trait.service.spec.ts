@@ -335,6 +335,95 @@ describe('CulturalTraitService', () => {
     });
   });
 
+  describe('findOne', () => {
+    it('returns a VERIFIED cultural trait with source provenance', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        culturalTrait({ status: VerificationStatus.VERIFIED }),
+      );
+
+      const result = await service.findOne(VILLAGE_ID, TRAIT_ID);
+
+      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: TRAIT_ID,
+        villageId: VILLAGE_ID,
+        status: VerificationStatus.VERIFIED,
+      });
+      expect(result).toMatchObject({
+        id: TRAIT_ID,
+        status: VerificationStatus.VERIFIED,
+        source: { id: SOURCE_ID, title: `Source ${SOURCE_ID}` },
+      });
+    });
+
+    it('returns 404 when the cultural trait does not exist', async () => {
+      await expect(
+        service.findOne(VILLAGE_ID, TRAIT_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns 404 when the cultural trait belongs to another village', async () => {
+      repository.findOneBy.mockResolvedValueOnce(null);
+
+      await expect(
+        service.findOne(VILLAGE_ID, TRAIT_ID),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repository.findOneBy).toHaveBeenCalledWith({
+        id: TRAIT_ID,
+        villageId: VILLAGE_ID,
+        status: VerificationStatus.VERIFIED,
+      });
+    });
+
+    it.each([VerificationStatus.PENDING, VerificationStatus.REJECTED])(
+      'returns 404 for a %s cultural trait',
+      async (status) => {
+        const unverifiedTrait = culturalTrait({ status });
+        repository.findOneBy.mockImplementationOnce(
+          (criteria: Partial<CulturalTrait>) =>
+            Promise.resolve(
+              unverifiedTrait.id === criteria.id &&
+                unverifiedTrait.villageId === criteria.villageId &&
+                unverifiedTrait.status === criteria.status
+                ? unverifiedTrait
+                : null,
+            ),
+        );
+
+        await expect(
+          service.findOne(VILLAGE_ID, TRAIT_ID),
+        ).rejects.toBeInstanceOf(NotFoundException);
+        expect(repository.findOneBy).toHaveBeenCalledWith({
+          id: TRAIT_ID,
+          villageId: VILLAGE_ID,
+          status: VerificationStatus.VERIFIED,
+        });
+      },
+    );
+
+    it('preserves village-not-found behavior', async () => {
+      villages.findOne.mockRejectedValueOnce(
+        new NotFoundException('Village not found'),
+      );
+
+      await expect(service.findOne(VILLAGE_ID, TRAIT_ID)).rejects.toThrow(
+        'Village not found',
+      );
+      expect(repository.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it('preserves the unavailable-source error', async () => {
+      repository.findOneBy.mockResolvedValueOnce(
+        culturalTrait({ status: VerificationStatus.VERIFIED }),
+      );
+      sources.findByIds.mockResolvedValueOnce([]);
+
+      await expect(
+        service.findOne(VILLAGE_ID, TRAIT_ID),
+      ).rejects.toBeInstanceOf(InternalServerErrorException);
+    });
+  });
+
   describe('update', () => {
     it('updates only supplied editable fields and preserves review metadata', async () => {
       const original = culturalTrait({

@@ -58,7 +58,7 @@ flowchart TB
         HER[heritage<br/>landmarks · cultural traits]
     end
     subgraph Lina
-        AUTH[auth<br/>roles · RolesGuard]
+        AUTH[auth<br/>JWT login · roles · guards]
         USR[users]
         AUD[audit log]:::planned
     end
@@ -85,8 +85,8 @@ flowchart TB
 ```
 
 Dashed boxes are planned modules that are not merged yet. Every module uses
-`common`. `auth` registers `RolesGuard` globally, so it applies to every
-route without other modules importing it.
+`common`. `auth` registers `JwtAuthGuard` and `RolesGuard` globally, so they
+apply to every route without other modules importing them.
 
 **Boundary rules** (checked in code review):
 
@@ -137,7 +137,7 @@ sequenceDiagram
     autonumber
     participant C as Client
     participant MW as Middleware<br/>(correlation id, request log)
-    participant G as RolesGuard
+    participant G as Guards<br/>(JwtAuthGuard, RolesGuard)
     participant P as ValidationPipe
     participant Ctl as Controller
     participant Svc as Service
@@ -147,7 +147,7 @@ sequenceDiagram
     C->>MW: HTTP request
     MW->>MW: reuse x-correlation-id or create one
     MW->>G: next()
-    G->>G: read @Roles (allows all until JWT)
+    G->>G: verify Bearer token (if any), check @Roles
     G->>P: allowed
     P->>P: whitelist, reject unknown fields, transform types
     P->>Ctl: typed DTO
@@ -157,7 +157,8 @@ sequenceDiagram
     Svc-->>Ctl: response DTO
     Ctl-->>C: 201 + JSON
 
-    Note over P,F: Any exception (validation, 404, 409, 422, unexpected)
+    Note over G,F: Any exception (auth, validation, 404, 409, 422, unexpected)
+    G--)F: 401 no or invalid token / 403 role not allowed
     P--)F: 400 validation error
     Svc--)F: 404 / 409 / 422
     F-->>C: { error: { code, message, details?, path, timestamp, correlationId } }
@@ -184,7 +185,8 @@ sequenceDiagram
 | Status codes | `404` unknown resource in the URL · `422` unknown id in the body · `409` conflict with existing data | services |
 | Data provenance | Population, history, landmark and cultural trait records require a `sourceId`; sources are a shared module | `source` module |
 | Conflicting data | A different value from another source becomes a **new record**, never an overwrite. Records are `PENDING → VERIFIED / REJECTED`, with the reviewer and the date. Public lists show `VERIFIED` records by default. Only `PENDING` records can be edited, and a verified record cannot be deleted | [verification](../src/modules/source/verification) |
-| Authorization | Roles `ADMIN`, `EDITOR`, `VERIFIER`, `VIEWER`. Endpoints declare `@Roles(...)`; one global guard checks them. Review endpoints stay closed (`401`) until JWT login is integrated | `auth` module |
+| Authentication | JWT access token (15 min) + rotated, single-use refresh token (7 days, stored hashed); argon2id passwords; login and register rate limited per IP | `auth` module, [ADR-002](adr/002-auth-and-token-strategy.md), [auth.md](auth.md) |
+| Authorization | Roles `ADMIN`, `EDITOR`, `VERIFIER`, `VIEWER`. Endpoints declare `@Roles(...)`; global guards return `401` without a token and `403` for a role that is not listed. Reviewers are taken from the token | `auth` module |
 | Native SQL | Used where a query is clearer or faster in SQL: village search (ranking across three name columns), population history (window function `LAG`) | `village-search.service.ts`, `population.service.ts` |
 | Search performance | GIN trigram indexes on normalized names; p95 470 ms → 22 ms under load | [performance/search.md](performance/search.md) |
 | External API | Provider interface + Nominatim adapter; timeout, retry with backoff, `Retry-After`, 1 request/second, in-memory cache | `geocoding` module, [ADR-004](adr/004-geocoding-caching-strategy.md) |

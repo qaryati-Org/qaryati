@@ -79,6 +79,15 @@ export class VillageService {
     return VillageResponseDto.from(village);
   }
 
+  // For modules that only need to know the village exists before writing a
+  // record for it: one indexed lookup, without loading the governorate and
+  // municipality that findOne joins in.
+  async ensureExists(id: string): Promise<void> {
+    if (!(await this.villages.existsBy({ id }))) {
+      throw new NotFoundException(`Village ${id} not found`);
+    }
+  }
+
   async create(dto: CreateVillageDto): Promise<VillageResponseDto> {
     const municipalityId = dto.municipalityId ?? null;
     await this.assertAdministration(dto.governorateId, municipalityId);

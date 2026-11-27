@@ -21,6 +21,7 @@ jobs:
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       NODE_ENV: test
+      GEOCODING_USER_AGENT: "Qaryati/1.0 (contact: ci@example.com)"
       DB_HOST: localhost
       DB_PORT: 5432
       DB_USER: qaryati

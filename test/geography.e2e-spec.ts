@@ -3,8 +3,10 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { Role } from '../src/modules/auth/enums/role.enum';
 import type { GeocodingProvider } from '../src/modules/geocoding/interfaces/geocoding-provider.interface';
 import { createTestApp } from './utils/create-test-app';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 
 interface VillageFixture {
   id: string;
@@ -152,6 +154,7 @@ const geocodingProvider: jest.Mocked<GeocodingProvider> = {
 describe('Geography endpoints (e2e)', () => {
   let app: INestApplication<App> | undefined;
   let dataSource: DataSource | undefined;
+  let admin: TestCaller;
 
   const geocodePath = (id: string) =>
     `/api/v1/geography/villages/${id}/geocode`;
@@ -185,6 +188,7 @@ describe('Geography endpoints (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp({ geocodingProvider });
+    admin = await callerWithRole(app, Role.ADMIN);
     const db = app.get(DataSource);
     dataSource = db;
 
@@ -215,6 +219,25 @@ describe('Geography endpoints (e2e)', () => {
     geocodeMock.mockReset();
   });
 
+  it('requires authentication to geocode a village', async () => {
+    const response = await request(app!.getHttpServer())
+      .post(geocodePath(villages.success.id))
+      .expect(401);
+
+    expect(response.body.error.code).toBe('UNAUTHORIZED');
+    expect(geocodeMock).not.toHaveBeenCalled();
+  });
+
+  it('forbids viewers from geocoding a village', async () => {
+    const viewer = await callerWithRole(app!, Role.VIEWER);
+    const response = await httpAs(app!, viewer)
+      .post(geocodePath(villages.success.id))
+      .expect(403);
+
+    expect(response.body.error.code).toBe('FORBIDDEN');
+    expect(geocodeMock).not.toHaveBeenCalled();
+  });
+
   afterAll(async () => {
     try {
       if (dataSource) {
@@ -238,7 +261,7 @@ describe('Geography endpoints (e2e)', () => {
       displayName: 'Ignored provider display name',
     });
 
-    const response = await request(app!.getHttpServer())
+    const response = await httpAs(app!, admin)
       .post(geocodePath(villages.success.id))
       .expect(200);
 
@@ -268,7 +291,7 @@ describe('Geography endpoints (e2e)', () => {
       displayName: 'Ignored provider display name',
     });
 
-    await request(app!.getHttpServer())
+    await httpAs(app!, admin)
       .post(geocodePath(villages.arabicFallback.id))
       .expect(200);
 
@@ -279,7 +302,7 @@ describe('Geography endpoints (e2e)', () => {
   });
 
   it('rejects an invalid village UUID', async () => {
-    const response = await request(app!.getHttpServer())
+    const response = await httpAs(app!, admin)
       .post(geocodePath('not-a-uuid'))
       .expect(400);
 
@@ -288,7 +311,7 @@ describe('Geography endpoints (e2e)', () => {
   });
 
   it('returns not found for a valid UUID without a village', async () => {
-    const response = await request(app!.getHttpServer())
+    const response = await httpAs(app!, admin)
       .post(geocodePath(randomUUID()))
       .expect(404);
 
@@ -307,7 +330,7 @@ describe('Geography endpoints (e2e)', () => {
       fixture: villages.existingLongitudeOnly,
     },
   ])('rejects a village with $description already set', async ({ fixture }) => {
-    const response = await request(app!.getHttpServer())
+    const response = await httpAs(app!, admin)
       .post(geocodePath(fixture.id))
       .expect(409);
 
@@ -322,7 +345,7 @@ describe('Geography endpoints (e2e)', () => {
   it('returns unprocessable entity when no location is resolved', async () => {
     geocodingProvider.geocode.mockResolvedValue(null);
 
-    const response = await request(app!.getHttpServer())
+    const response = await httpAs(app!, admin)
       .post(geocodePath(villages.unresolved.id))
       .expect(422);
 
@@ -341,7 +364,7 @@ describe('Geography endpoints (e2e)', () => {
       new Error('Unexpected provider failure'),
     );
 
-    const response = await request(app!.getHttpServer())
+    const response = await httpAs(app!, admin)
       .post(geocodePath(villages.providerError.id))
       .expect(500);
 

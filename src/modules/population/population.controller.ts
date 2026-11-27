@@ -10,8 +10,6 @@ import {
   Patch,
   Post,
   Query,
-  UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -30,7 +28,8 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Paginated } from '../../common/pagination/paginated';
-import { Role, Roles } from '../auth';
+import type { AuthenticatedUser } from '../auth';
+import { CurrentUser, Role, Roles } from '../auth';
 import { CreatePopulationRecordDto } from './dto/create-population-record.dto';
 import { PopulationHistoryQueryDto } from './dto/population-history-query.dto';
 import {
@@ -42,13 +41,8 @@ import { PopulationRecordResponseDto } from './dto/population-record-response.dt
 import { RejectPopulationRecordDto } from './dto/reject-population-record.dto';
 import { UpdatePopulationRecordDto } from './dto/update-population-record.dto';
 import { VerifyPopulationRecordDto } from './dto/verify-population-record.dto';
-import {
-  POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
-  PopulationReviewAuthenticationGuard,
-} from './population-review-auth.guard';
 import { PopulationService } from './population.service';
 
-// @Roles metadata is not enforced while the global RolesGuard allows all requests.
 @ApiTags('population')
 @Controller('villages/:villageId/population-records')
 export class PopulationController {
@@ -177,18 +171,17 @@ export class PopulationController {
   @Post(':id/verify')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(PopulationReviewAuthenticationGuard)
   @ApiOperation({
     summary: 'Verify a population record',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
   @ApiOkResponse({ type: PopulationRecordResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or review note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'Population record not found' })
@@ -199,28 +192,30 @@ export class PopulationController {
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: VerifyPopulationRecordDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<PopulationRecordResponseDto> {
-    void villageId;
-    void id;
-    void dto;
-    throw new UnauthorizedException(POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+    return this.populationService.verify(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
+    );
   }
 
   @Post(':id/reject')
   @HttpCode(HttpStatus.OK)
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(PopulationReviewAuthenticationGuard)
   @ApiOperation({
     summary: 'Reject a population record',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Population record UUID' })
   @ApiOkResponse({ type: PopulationRecordResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or rejection note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'Population record not found' })
@@ -231,11 +226,14 @@ export class PopulationController {
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: RejectPopulationRecordDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<PopulationRecordResponseDto> {
-    void villageId;
-    void id;
-    void dto;
-    throw new UnauthorizedException(POPULATION_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+    return this.populationService.reject(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
+    );
   }
 }
 

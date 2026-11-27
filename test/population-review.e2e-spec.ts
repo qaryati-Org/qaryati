@@ -10,6 +10,7 @@ import { PopulationService } from '../src/modules/population/population.service'
 import type { PopulationReviewerContext } from '../src/modules/population/population.service';
 import { VerificationStatus } from '../src/modules/source/verification/verification-status.enum';
 import { UsersService } from '../src/modules/users/users.service';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 interface PopulationRow {
@@ -181,58 +182,110 @@ describe('Population review (e2e)', () => {
     }
   });
 
-  it('rejects anonymous verification without changing the record', async () => {
-    const id = await insertRecord(1997, 1200);
-    const before = await readRecord(id);
+  describe('HTTP review endpoints', () => {
+    const reviewNote = { reviewNote: 'Checked against the source' };
+    let verifier: TestCaller;
+    let admin: TestCaller;
+    let viewer: TestCaller;
+    let editor: TestCaller;
 
-    const response = await request(app!.getHttpServer())
-      .post(`${recordsPath()}/${id}/verify`)
-      .send({ reviewNote: 'Looks correct' });
+    beforeAll(async () => {
+      verifier = await callerWithRole(app!, Role.VERIFIER);
+      admin = await callerWithRole(app!, Role.ADMIN);
+      viewer = await callerWithRole(app!, Role.VIEWER);
+      editor = await callerWithRole(app!, Role.EDITOR);
+    });
 
-    expect(response.status).toBe(401);
-    expect(await readRecord(id)).toEqual(before);
-  });
+    it('returns 401 without a token, ignoring forged identity headers', async () => {
+      const id = await insertRecord(1997, 1200);
+      const before = await readRecord(id);
+      for (const action of ['verify', 'reject']) {
+        const response = await request(app!.getHttpServer())
+          .post(`${recordsPath()}/${id}/${action}`)
+          .set('x-user-id', testReviewer().reviewerId)
+          .set('x-role', 'ADMIN')
+          .send(reviewNote);
+        expect(response.status).toBe(401);
+      }
+      expect(await readRecord(id)).toEqual(before);
+    });
 
-  it('rejects anonymous rejection without changing the record', async () => {
-    const id = await insertRecord(1997, 1200);
-    const before = await readRecord(id);
+    it('returns 403 for VIEWER and EDITOR without changing the record', async () => {
+      const id = await insertRecord(1997, 1200);
+      const before = await readRecord(id);
+      for (const caller of [viewer, editor]) {
+        for (const action of ['verify', 'reject']) {
+          const response = await httpAs(app!, caller)
+            .post(`${recordsPath()}/${id}/${action}`)
+            .send(reviewNote);
+          expect(response.status).toBe(403);
+        }
+      }
+      expect(await readRecord(id)).toEqual(before);
+    });
 
-    const response = await request(app!.getHttpServer())
-      .post(`${recordsPath()}/${id}/reject`)
-      .send({ reviewNote: 'Insufficient evidence' });
+    it('does not trust reviewer IDs, roles, or review fields in the body', async () => {
+      const id = await insertRecord(1997, 1200);
+      const before = await readRecord(id);
 
-    expect(response.status).toBe(401);
-    expect(await readRecord(id)).toEqual(before);
-  });
+      const response = await httpAs(app!, verifier)
+        .post(`${recordsPath()}/${id}/verify`)
+        .send({
+          reviewerId,
+          reviewedById: reviewerId,
+          reviewedAt: new Date().toISOString(),
+          role: 'ADMIN',
+          status: 'VERIFIED',
+        });
 
-  it('does not trust forged user IDs, roles, or review fields', async () => {
-    const id = await insertRecord(1997, 1200);
-    const before = await readRecord(id);
+      expect(response.status).toBe(400);
+      expect(await readRecord(id)).toEqual(before);
+    });
 
-    const response = await request(app!.getHttpServer())
-      .post(`${recordsPath()}/${id}/verify`)
-      .set('x-user-id', testReviewer().reviewerId)
-      .set('x-role', 'ADMIN')
-      .send({
-        reviewerId,
-        reviewedById: reviewerId,
-        reviewedAt: new Date().toISOString(),
-        role: 'ADMIN',
-        status: 'VERIFIED',
+    it('verifies as VERIFIER and records the caller as reviewer', async () => {
+      const id = await insertRecord(1997, 1200);
+
+      const response = await httpAs(app!, verifier)
+        .post(`${recordsPath()}/${id}/verify`)
+        .send(reviewNote);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        status: VerificationStatus.VERIFIED,
+        reviewedById: verifier.userId,
       });
+      expect(await readRecord(id)).toMatchObject({
+        status: VerificationStatus.VERIFIED,
+        reviewed_by_id: verifier.userId,
+      });
+    });
 
-    expect(response.status).toBe(401);
-    expect(await readRecord(id)).toEqual(before);
+    it('rejects as ADMIN and records the caller as reviewer', async () => {
+      const id = await insertRecord(1997, 1200);
+
+      const response = await httpAs(app!, admin)
+        .post(`${recordsPath()}/${id}/reject`)
+        .send(reviewNote);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        status: VerificationStatus.REJECTED,
+        reviewedById: admin.userId,
+      });
+      expect(await readRecord(id)).toMatchObject({
+        status: VerificationStatus.REJECTED,
+        reviewed_by_id: admin.userId,
+      });
+    });
   });
 
   it('keeps existing population CRUD and history endpoints available', async () => {
-    const created = await request(app!.getHttpServer())
-      .post(recordsPath())
-      .send({
-        value: 1200,
-        referenceYear: 1997,
-        sourceId: fixtureIds.sources[0],
-      });
+    const editor = await callerWithRole(app!, Role.EDITOR);
+    const created = await httpAs(app!, editor).post(recordsPath()).send({
+      value: 1200,
+      referenceYear: 1997,
+      sourceId: fixtureIds.sources[0],
+    });
     expect(created.status).toBe(201);
     const createdId: unknown = created.body.id;
     if (typeof createdId !== 'string') {

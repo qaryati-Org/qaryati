@@ -1,7 +1,8 @@
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { Role } from '../src/modules/auth/enums/role.enum';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 // Every row this file creates starts with PREFIX, so cleanup never touches
@@ -16,7 +17,10 @@ describe('Village alternative names (e2e)', () => {
   let otherVillageId: string;
   let sourceId: string;
 
-  const http = () => request(app.getHttpServer());
+  let admin: TestCaller;
+
+  // Write endpoints need a token; ADMIN is allowed on all of them.
+  const http = () => httpAs(app, admin);
   const namesPath = (id = villageId) => `/api/v1/villages/${id}/names`;
 
   const cleanup = async () => {
@@ -26,6 +30,7 @@ describe('Village alternative names (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    admin = await callerWithRole(app, Role.ADMIN);
     ds = app.get(DataSource);
     await cleanup();
 

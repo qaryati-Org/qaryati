@@ -19,6 +19,7 @@ import {
 import { VerificationStatus } from '../src/modules/source/verification/verification-status.enum';
 import { SourceService } from '../src/modules/source/source.service';
 import { UsersService } from '../src/modules/users/users.service';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 const fixtureToken = randomUUID();
@@ -86,11 +87,14 @@ describe('History module (e2e)', () => {
   const historyPath = (villageId = fixtureIds.village) =>
     `/api/v1/villages/${villageId}/history`;
 
+  let admin: TestCaller;
+
+  // Write endpoints need a token; ADMIN is allowed on all of them.
   const http = () => {
     if (!app) {
       throw new Error('The History test application is not initialized');
     }
-    return request(app.getHttpServer());
+    return httpAs(app, admin);
   };
 
   const insertRecord = async (options: InsertOptions = {}): Promise<string> => {
@@ -158,6 +162,7 @@ describe('History module (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    admin = await callerWithRole(app, Role.ADMIN);
     dataSource = app.get(DataSource);
     historyService = app.get(HistoryService);
 
@@ -659,21 +664,91 @@ describe('History module (e2e)', () => {
     expect(await readRecord(id)).toEqual(before);
   });
 
-  it('blocks HTTP verification and rejection without trusted identity or mutation', async () => {
-    const id = await insertRecord();
-    const before = await readRecord(id);
-    await http()
-      .post(`${historyPath()}/${id}/verify`)
-      .set('x-user-id', reviewerId!)
-      .set('x-role', 'ADMIN')
-      .send({ reviewerId, reviewNote: 'Forged reviewer' })
-      .expect(401);
-    await http()
-      .post(`${historyPath()}/${id}/reject`)
-      .set('x-user-id', reviewerId!)
-      .set('x-role', 'ADMIN')
-      .send({ reviewerId, reviewNote: 'Forged reviewer' })
-      .expect(401);
-    expect(await readRecord(id)).toEqual(before);
+  describe('HTTP review endpoints', () => {
+    const reviewNote = { reviewNote: 'Checked against the source' };
+    let verifier: TestCaller;
+    let viewer: TestCaller;
+    let editor: TestCaller;
+
+    beforeAll(async () => {
+      verifier = await callerWithRole(app!, Role.VERIFIER);
+      viewer = await callerWithRole(app!, Role.VIEWER);
+      editor = await callerWithRole(app!, Role.EDITOR);
+    });
+
+    it('returns 401 without a token, ignoring forged identity headers', async () => {
+      const id = await insertRecord();
+      const before = await readRecord(id);
+      for (const action of ['verify', 'reject']) {
+        await request(app!.getHttpServer())
+          .post(`${historyPath()}/${id}/${action}`)
+          .set('x-user-id', verifier.userId)
+          .set('x-role', 'ADMIN')
+          .send(reviewNote)
+          .expect(401);
+      }
+      expect(await readRecord(id)).toEqual(before);
+    });
+
+    it('returns 403 for VIEWER and EDITOR without changing the record', async () => {
+      const id = await insertRecord();
+      const before = await readRecord(id);
+      for (const caller of [viewer, editor]) {
+        for (const action of ['verify', 'reject']) {
+          await httpAs(app!, caller)
+            .post(`${historyPath()}/${id}/${action}`)
+            .send(reviewNote)
+            .expect(403);
+        }
+      }
+      expect(await readRecord(id)).toEqual(before);
+    });
+
+    it('rejects forged reviewer fields in the body', async () => {
+      const id = await insertRecord();
+      const before = await readRecord(id);
+      await httpAs(app!, verifier)
+        .post(`${historyPath()}/${id}/verify`)
+        .send({
+          ...reviewNote,
+          reviewerId: viewer.userId,
+          reviewedById: viewer.userId,
+          status: VerificationStatus.VERIFIED,
+        })
+        .expect(400);
+      expect(await readRecord(id)).toEqual(before);
+    });
+
+    it('verifies as VERIFIER and records the caller as reviewer', async () => {
+      const id = await insertRecord();
+      const res = await httpAs(app!, verifier)
+        .post(`${historyPath()}/${id}/verify`)
+        .send(reviewNote)
+        .expect(200);
+      expect(res.body).toMatchObject({
+        status: VerificationStatus.VERIFIED,
+        reviewedById: verifier.userId,
+      });
+      expect(await readRecord(id)).toMatchObject({
+        status: VerificationStatus.VERIFIED,
+        reviewed_by_id: verifier.userId,
+      });
+    });
+
+    it('rejects as ADMIN and records the caller as reviewer', async () => {
+      const id = await insertRecord();
+      const res = await http()
+        .post(`${historyPath()}/${id}/reject`)
+        .send(reviewNote)
+        .expect(200);
+      expect(res.body).toMatchObject({
+        status: VerificationStatus.REJECTED,
+        reviewedById: admin.userId,
+      });
+      expect(await readRecord(id)).toMatchObject({
+        status: VerificationStatus.REJECTED,
+        reviewed_by_id: admin.userId,
+      });
+    });
   });
 });

@@ -1,10 +1,16 @@
-import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import {
+  AUTH_TESTING_IMPORTS,
+  AUTH_TESTING_PROVIDERS,
+  bearerFor,
+  TEST_CALLER_ID,
+} from '../../../test/utils/unit-auth';
+import { Role } from '../auth/enums/role.enum';
 import { setupApp } from '../../setup-app';
 import { HistoryRecordType } from './entities/history-record.entity';
-import { HistoryAuthenticationGuard } from './history-authentication.guard';
 import { HistoryController } from './history.controller';
 import { HistoryService } from './history.service';
 
@@ -12,7 +18,7 @@ const VILLAGE_ID = '00000000-0000-4000-8000-000000000001';
 const RECORD_ID = '00000000-0000-4000-8000-000000000002';
 const BASE_PATH = `/api/v1/villages/${VILLAGE_ID}/history`;
 
-describe('HistoryController and authentication guard', () => {
+describe('HistoryController with role enforcement', () => {
   let app: INestApplication<App>;
   let historyService: {
     list: jest.Mock;
@@ -60,10 +66,11 @@ describe('HistoryController and authentication guard', () => {
       reject: jest.fn(),
     };
     const moduleRef = await Test.createTestingModule({
+      imports: [...AUTH_TESTING_IMPORTS],
       controllers: [HistoryController],
       providers: [
         { provide: HistoryService, useValue: historyService },
-        HistoryAuthenticationGuard,
+        ...AUTH_TESTING_PROVIDERS,
       ],
     }).compile();
     app = moduleRef.createNestApplication<INestApplication<App>>();
@@ -104,9 +111,10 @@ describe('HistoryController and authentication guard', () => {
     expect(historyService.list).not.toHaveBeenCalled();
   });
 
-  it('allows CRUD routes under the current permissive RolesGuard', async () => {
+  it('allows CRUD routes as ADMIN', async () => {
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         type: 'EVENT',
         title: 'History record',
@@ -116,10 +124,12 @@ describe('HistoryController and authentication guard', () => {
       .expect(201);
     await request(app.getHttpServer())
       .patch(`${BASE_PATH}/${RECORD_ID}`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({ title: 'Updated title' })
       .expect(200);
     await request(app.getHttpServer())
       .delete(`${BASE_PATH}/${RECORD_ID}`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .expect(204);
 
     expect(historyService.create).toHaveBeenCalledTimes(1);
@@ -130,10 +140,12 @@ describe('HistoryController and authentication guard', () => {
   it('rejects invalid CRUD bodies and UUIDs before calling the service', async () => {
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({ type: 'NOT_A_TYPE', reviewerId: RECORD_ID })
       .expect(400);
     await request(app.getHttpServer())
       .post('/api/v1/villages/not-a-uuid/history')
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         type: 'EVENT',
         title: 'History record',
@@ -143,10 +155,12 @@ describe('HistoryController and authentication guard', () => {
       .expect(400);
     await request(app.getHttpServer())
       .patch(`${BASE_PATH}/not-a-uuid`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({ title: 'Updated title' })
       .expect(400);
     await request(app.getHttpServer())
       .delete(`${BASE_PATH}/not-a-uuid`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .expect(400);
 
     expect(historyService.create).not.toHaveBeenCalled();
@@ -154,27 +168,56 @@ describe('HistoryController and authentication guard', () => {
     expect(historyService.remove).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['verify', { reviewNote: 'Approved' }],
-    ['reject', { reviewNote: 'Rejected' }],
-  ])(
-    'keeps the %s HTTP endpoint blocked without trusted auth',
-    async (action, body) => {
+  describe.each(['verify', 'reject'] as const)('POST :id/%s', (action) => {
+    const path = `${BASE_PATH}/${RECORD_ID}/${action}`;
+    const body = { reviewNote: 'Checked against the source' };
+
+    it('returns 401 without a token, ignoring forged identity headers', async () => {
       await request(app.getHttpServer())
-        .post(`${BASE_PATH}/${RECORD_ID}/${action}`)
+        .post(path)
         .set('x-user-id', RECORD_ID)
         .set('x-role', 'ADMIN')
         .send(body)
         .expect(401);
+      expect(historyService[action]).not.toHaveBeenCalled();
+    });
 
-      expect(historyService.verify).not.toHaveBeenCalled();
-      expect(historyService.reject).not.toHaveBeenCalled();
-    },
-  );
+    it.each([Role.VIEWER, Role.EDITOR])('returns 403 for %s', async (role) => {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', bearerFor(role))
+        .send(body)
+        .expect(403);
+      expect(historyService[action]).not.toHaveBeenCalled();
+    });
 
-  it('has a guard that always rejects without a trusted identity', () => {
-    const guard = new HistoryAuthenticationGuard();
+    it.each([Role.VERIFIER, Role.ADMIN])(
+      'records the %s caller as the reviewer',
+      async (role) => {
+        historyService[action].mockResolvedValue({ id: RECORD_ID });
 
-    expect(() => guard.canActivate()).toThrow(UnauthorizedException);
+        await request(app.getHttpServer())
+          .post(path)
+          .set('Authorization', bearerFor(role))
+          .send(body)
+          .expect(200);
+
+        expect(historyService[action]).toHaveBeenCalledWith(
+          VILLAGE_ID,
+          RECORD_ID,
+          { reviewerId: TEST_CALLER_ID },
+          body,
+        );
+      },
+    );
+
+    it('rejects reviewer fields sent in the body', async () => {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', bearerFor(Role.VERIFIER))
+        .send({ ...body, reviewerId: RECORD_ID, reviewedById: RECORD_ID })
+        .expect(400);
+      expect(historyService[action]).not.toHaveBeenCalled();
+    });
   });
 });

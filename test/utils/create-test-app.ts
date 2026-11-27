@@ -6,11 +6,19 @@ import { GEOCODING_PROVIDER } from '../../src/modules/geocoding/interfaces/geoco
 import type { GeocodingProvider } from '../../src/modules/geocoding/interfaces/geocoding-provider.interface';
 import { setupApp } from '../../src/setup-app';
 
+export interface TestAppOptions {
+  // Login/register attempts per minute. E2E files log in far more often
+  // than a real client, so the default is high; the rate-limit test lowers it.
+  authRateLimit?: number;
+  geocodingProvider?: GeocodingProvider;
+}
+
 // Boots the full app exactly like main.ts does. Needs a running Postgres
 // (docker compose up -d db); migrations run on startup.
 export async function createTestApp(
-  options: { geocodingProvider?: GeocodingProvider } = {},
+  options: TestAppOptions = {},
 ): Promise<INestApplication<App>> {
+  process.env.AUTH_RATE_LIMIT = String(options.authRateLimit ?? 1000);
   const testingModule = Test.createTestingModule({
     imports: [AppModule],
   });

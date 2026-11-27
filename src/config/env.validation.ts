@@ -66,6 +66,9 @@ export const envValidationSchema = Joi.object({
     }),
   JWT_ACCESS_TTL_SECONDS: Joi.number().integer().min(60).default(900),
   JWT_REFRESH_TTL_SECONDS: Joi.number().integer().min(60).default(604800),
+  // Max login/register attempts per client IP within the window.
+  AUTH_RATE_LIMIT: Joi.number().integer().min(1).default(5),
+  AUTH_RATE_LIMIT_TTL_SECONDS: Joi.number().integer().min(1).default(60),
 
   // Optional first admin, created on startup if no user has this email yet.
   ADMIN_EMAIL: Joi.string().email(),

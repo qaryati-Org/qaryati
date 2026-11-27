@@ -1,3 +1,5 @@
+import { DEV_ONLY_JWT_SECRET } from './env.validation';
+
 // Typed access to environment configuration. Values are already validated
 // by env.validation.ts, so defaults here only matter for tooling (e.g. the
 // TypeORM CLI) that loads this file outside of Nest.
@@ -23,6 +25,13 @@ export const configuration = () => ({
     timeoutMs: Number(process.env.GEOCODING_TIMEOUT_MS ?? 5000),
     cacheTtlMs: Number(process.env.GEOCODING_CACHE_TTL_MS ?? 86400000),
     cacheMaxEntries: Number(process.env.GEOCODING_CACHE_MAX_ENTRIES ?? 1000),
+  },
+  auth: {
+    accessSecret: process.env.JWT_ACCESS_SECRET ?? DEV_ONLY_JWT_SECRET,
+    accessTtlSeconds: Number(process.env.JWT_ACCESS_TTL_SECONDS ?? 900),
+    refreshTtlSeconds: Number(process.env.JWT_REFRESH_TTL_SECONDS ?? 604800),
+    adminEmail: process.env.ADMIN_EMAIL,
+    adminPassword: process.env.ADMIN_PASSWORD,
   },
 });
 

@@ -93,7 +93,7 @@ describe('LandmarkService', () => {
     take: jest.Mock;
     getManyAndCount: jest.Mock;
   };
-  let villages: { findOne: jest.Mock };
+  let villages: { ensureExists: jest.Mock };
   let sources: { ensureExists: jest.Mock; findByIds: jest.Mock };
   let service: LandmarkService;
 
@@ -127,7 +127,7 @@ describe('LandmarkService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     };
-    villages = { findOne: jest.fn().mockResolvedValue({ id: VILLAGE_ID }) };
+    villages = { ensureExists: jest.fn().mockResolvedValue(undefined) };
     sources = {
       ensureExists: jest.fn().mockResolvedValue(undefined),
       findByIds: jest.fn((ids: string[]) =>
@@ -145,7 +145,7 @@ describe('LandmarkService', () => {
     it('creates a PENDING landmark with null review metadata and source provenance', async () => {
       const result = await service.create(VILLAGE_ID, createDto());
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(sources.ensureExists).toHaveBeenCalledWith(SOURCE_ID);
       expect(repository.create).toHaveBeenCalledWith({
         villageId: VILLAGE_ID,
@@ -169,7 +169,7 @@ describe('LandmarkService', () => {
     });
 
     it('returns 404 for an unknown village without saving', async () => {
-      villages.findOne.mockRejectedValueOnce(
+      villages.ensureExists.mockRejectedValueOnce(
         new NotFoundException('Village not found'),
       );
 
@@ -218,7 +218,7 @@ describe('LandmarkService', () => {
 
       const result = await service.list(VILLAGE_ID, queryDto());
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'landmark.status = :status',
         { status: VerificationStatus.VERIFIED },
@@ -309,7 +309,7 @@ describe('LandmarkService', () => {
     });
 
     it('returns 404 for an unknown village', async () => {
-      villages.findOne.mockRejectedValueOnce(
+      villages.ensureExists.mockRejectedValueOnce(
         new NotFoundException('Village not found'),
       );
 
@@ -328,7 +328,7 @@ describe('LandmarkService', () => {
 
       const result = await service.findOne(VILLAGE_ID, LANDMARK_ID);
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(repository.findOneBy).toHaveBeenCalledWith({
         id: LANDMARK_ID,
         villageId: VILLAGE_ID,
@@ -387,7 +387,7 @@ describe('LandmarkService', () => {
     );
 
     it('preserves village-not-found behavior', async () => {
-      villages.findOne.mockRejectedValueOnce(
+      villages.ensureExists.mockRejectedValueOnce(
         new NotFoundException('Village not found'),
       );
 

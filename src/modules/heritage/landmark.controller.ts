@@ -10,8 +10,6 @@ import {
   Patch,
   Post,
   Query,
-  UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -30,17 +28,14 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Paginated } from '../../common/pagination/paginated';
-import { Role, Roles } from '../auth';
+import type { AuthenticatedUser } from '../auth';
+import { CurrentUser, Role, Roles } from '../auth';
 import { CreateLandmarkDto } from './dto/create-landmark.dto';
 import { LandmarkQueryDto } from './dto/landmark-query.dto';
 import { LandmarkResponseDto } from './dto/landmark-response.dto';
 import { RejectLandmarkDto } from './dto/reject-landmark.dto';
 import { UpdateLandmarkDto } from './dto/update-landmark.dto';
 import { VerifyLandmarkDto } from './dto/verify-landmark.dto';
-import {
-  LANDMARK_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
-  LandmarkReviewAuthenticationGuard,
-} from './landmark-review-authentication.guard';
 import { LandmarkService } from './landmark.service';
 
 @ApiTags('landmarks')
@@ -150,50 +145,52 @@ export class LandmarkController {
 
   @Post(':id/verify')
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(LandmarkReviewAuthenticationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify a landmark',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Landmark UUID' })
   @ApiOkResponse({ type: LandmarkResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or review note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'Landmark not found' })
   @ApiConflictResponse({
     description: 'The landmark cannot transition to VERIFIED',
   })
-  // Keep the decorated parameters for Nest's route binding and validation.
-  /* eslint-disable @typescript-eslint/no-unused-vars */
   verify(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: VerifyLandmarkDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<LandmarkResponseDto> {
-    throw new UnauthorizedException(LANDMARK_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+    return this.landmarkService.verify(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
+    );
   }
 
   @Post(':id/reject')
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(LandmarkReviewAuthenticationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Reject a landmark',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Landmark UUID' })
   @ApiOkResponse({ type: LandmarkResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or rejection note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'Landmark not found' })
@@ -204,8 +201,13 @@ export class LandmarkController {
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: RejectLandmarkDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<LandmarkResponseDto> {
-    throw new UnauthorizedException(LANDMARK_REVIEW_AUTH_UNAVAILABLE_MESSAGE);
+    return this.landmarkService.reject(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
+    );
   }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 }

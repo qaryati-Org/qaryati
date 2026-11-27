@@ -1,10 +1,16 @@
-import { INestApplication, UnauthorizedException } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import {
+  AUTH_TESTING_IMPORTS,
+  AUTH_TESTING_PROVIDERS,
+  bearerFor,
+  TEST_CALLER_ID,
+} from '../../../test/utils/unit-auth';
+import { Role } from '../auth/enums/role.enum';
 import { setupApp } from '../../setup-app';
 import { CulturalTraitType } from './entities/cultural-trait.entity';
-import { CulturalTraitReviewAuthenticationGuard } from './cultural-trait-review-authentication.guard';
 import { CulturalTraitController } from './cultural-trait.controller';
 import { CulturalTraitService } from './cultural-trait.service';
 
@@ -13,7 +19,7 @@ const TRAIT_ID = '00000000-0000-4000-8000-000000000002';
 const SOURCE_ID = '00000000-0000-4000-8000-000000000003';
 const BASE_PATH = `/api/v1/villages/${VILLAGE_ID}/cultural-traits`;
 
-describe('CulturalTraitController and review authentication guard', () => {
+describe('CulturalTraitController with role enforcement', () => {
   let app: INestApplication<App>;
   let culturalTraitService: {
     list: jest.Mock;
@@ -59,10 +65,11 @@ describe('CulturalTraitController and review authentication guard', () => {
       reject: jest.fn(),
     };
     const moduleRef = await Test.createTestingModule({
+      imports: [...AUTH_TESTING_IMPORTS],
       controllers: [CulturalTraitController],
       providers: [
         { provide: CulturalTraitService, useValue: culturalTraitService },
-        CulturalTraitReviewAuthenticationGuard,
+        ...AUTH_TESTING_PROVIDERS,
       ],
     }).compile();
     app = moduleRef.createNestApplication<INestApplication<App>>();
@@ -91,6 +98,7 @@ describe('CulturalTraitController and review authentication guard', () => {
   it('allows create, update, and delete with the expected HTTP status codes', async () => {
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         name: 'Traditional weaving',
         type: 'CRAFT',
@@ -100,10 +108,12 @@ describe('CulturalTraitController and review authentication guard', () => {
       .expect(201);
     await request(app.getHttpServer())
       .patch(`${BASE_PATH}/${TRAIT_ID}`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({ name: 'Updated weaving' })
       .expect(200);
     await request(app.getHttpServer())
       .delete(`${BASE_PATH}/${TRAIT_ID}`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .expect(204);
 
     expect(culturalTraitService.create).toHaveBeenCalledTimes(1);
@@ -117,6 +127,7 @@ describe('CulturalTraitController and review authentication guard', () => {
   it('rejects invalid trait types, blank input, null updates, extra fields, and UUIDs', async () => {
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         name: 'Traditional food',
         type: 'UNKNOWN',
@@ -126,6 +137,7 @@ describe('CulturalTraitController and review authentication guard', () => {
       .expect(400);
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         name: '  ',
         type: 'FOOD',
@@ -135,6 +147,7 @@ describe('CulturalTraitController and review authentication guard', () => {
       .expect(400);
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         name: 'Valid name',
         type: 'FOOD',
@@ -144,10 +157,12 @@ describe('CulturalTraitController and review authentication guard', () => {
       .expect(400);
     await request(app.getHttpServer())
       .patch(`${BASE_PATH}/${TRAIT_ID}`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({ name: null })
       .expect(400);
     await request(app.getHttpServer())
       .post(BASE_PATH)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         name: 'Valid name',
         type: 'FOOD',
@@ -159,6 +174,7 @@ describe('CulturalTraitController and review authentication guard', () => {
       .expect(400);
     await request(app.getHttpServer())
       .post('/api/v1/villages/not-a-uuid/cultural-traits')
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({
         name: 'Valid name',
         type: 'FOOD',
@@ -168,10 +184,12 @@ describe('CulturalTraitController and review authentication guard', () => {
       .expect(400);
     await request(app.getHttpServer())
       .patch(`${BASE_PATH}/not-a-uuid`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .send({ name: 'Updated name' })
       .expect(400);
     await request(app.getHttpServer())
       .delete(`${BASE_PATH}/not-a-uuid`)
+      .set('Authorization', bearerFor(Role.ADMIN))
       .expect(400);
 
     expect(culturalTraitService.create).not.toHaveBeenCalled();
@@ -179,34 +197,56 @@ describe('CulturalTraitController and review authentication guard', () => {
     expect(culturalTraitService.remove).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['verify', { reviewNote: 'Evidence confirmed' }],
-    ['reject', { reviewNote: 'Insufficient evidence' }],
-  ])(
-    'blocks %s despite forged reviewer headers and body fields',
-    async (action, reviewBody) => {
+  describe.each(['verify', 'reject'] as const)('POST :id/%s', (action) => {
+    const path = `${BASE_PATH}/${TRAIT_ID}/${action}`;
+    const body = { reviewNote: 'Checked against the source' };
+
+    it('returns 401 without a token, ignoring forged identity headers', async () => {
       await request(app.getHttpServer())
-        .post(`${BASE_PATH}/${TRAIT_ID}/${action}`)
+        .post(path)
         .set('x-user-id', TRAIT_ID)
         .set('x-role', 'ADMIN')
-        .send({
-          ...reviewBody,
-          reviewerId: TRAIT_ID,
-          reviewedById: TRAIT_ID,
-          reviewedAt: new Date().toISOString(),
-          status: 'VERIFIED',
-          role: 'ADMIN',
-        })
+        .send(body)
         .expect(401);
+      expect(culturalTraitService[action]).not.toHaveBeenCalled();
+    });
 
-      expect(culturalTraitService.verify).not.toHaveBeenCalled();
-      expect(culturalTraitService.reject).not.toHaveBeenCalled();
-    },
-  );
+    it.each([Role.VIEWER, Role.EDITOR])('returns 403 for %s', async (role) => {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', bearerFor(role))
+        .send(body)
+        .expect(403);
+      expect(culturalTraitService[action]).not.toHaveBeenCalled();
+    });
 
-  it('has a review guard that always rejects without trusted authentication', () => {
-    const guard = new CulturalTraitReviewAuthenticationGuard();
+    it.each([Role.VERIFIER, Role.ADMIN])(
+      'records the %s caller as the reviewer',
+      async (role) => {
+        culturalTraitService[action].mockResolvedValue({ id: TRAIT_ID });
 
-    expect(() => guard.canActivate()).toThrow(UnauthorizedException);
+        await request(app.getHttpServer())
+          .post(path)
+          .set('Authorization', bearerFor(role))
+          .send(body)
+          .expect(200);
+
+        expect(culturalTraitService[action]).toHaveBeenCalledWith(
+          VILLAGE_ID,
+          TRAIT_ID,
+          { reviewerId: TEST_CALLER_ID },
+          body,
+        );
+      },
+    );
+
+    it('rejects reviewer fields sent in the body', async () => {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', bearerFor(Role.VERIFIER))
+        .send({ ...body, reviewerId: TRAIT_ID, reviewedById: TRAIT_ID })
+        .expect(400);
+      expect(culturalTraitService[action]).not.toHaveBeenCalled();
+    });
   });
 });

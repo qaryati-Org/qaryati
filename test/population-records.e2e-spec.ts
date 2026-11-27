@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { Role } from '../src/modules/auth/enums/role.enum';
+import { callerWithRole, httpAs, TestCaller } from './utils/auth';
 import { createTestApp } from './utils/create-test-app';
 
 type PopulationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
@@ -40,11 +41,14 @@ describe('Population records (e2e)', () => {
     return dataSource;
   };
 
+  let admin: TestCaller;
+
+  // Write endpoints need a token; ADMIN is allowed on all of them.
   const http = () => {
     if (!app) {
       throw new Error('The test application is not initialized');
     }
-    return request(app.getHttpServer());
+    return httpAs(app, admin);
   };
 
   const recordsPath = (villageId: string = fixtureIds.village) =>
@@ -135,6 +139,7 @@ describe('Population records (e2e)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
+    admin = await callerWithRole(app, Role.ADMIN);
     dataSource = app.get(DataSource);
     await cleanupFixtures();
 

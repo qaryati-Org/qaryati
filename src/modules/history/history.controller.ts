@@ -10,8 +10,6 @@ import {
   Patch,
   Post,
   Query,
-  UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -30,17 +28,14 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Paginated } from '../../common/pagination/paginated';
-import { Role, Roles } from '../auth';
+import type { AuthenticatedUser } from '../auth';
+import { CurrentUser, Role, Roles } from '../auth';
 import { CreateHistoryRecordDto } from './dto/create-history-record.dto';
 import { HistoryRecordQueryDto } from './dto/history-record-query.dto';
 import { HistoryRecordResponseDto } from './dto/history-record-response.dto';
 import { RejectHistoryRecordDto } from './dto/reject-history-record.dto';
 import { UpdateHistoryRecordDto } from './dto/update-history-record.dto';
 import { VerifyHistoryRecordDto } from './dto/verify-history-record.dto';
-import {
-  HISTORY_AUTH_UNAVAILABLE_MESSAGE,
-  HistoryAuthenticationGuard,
-} from './history-authentication.guard';
 import { HistoryService } from './history.service';
 
 @ApiTags('history')
@@ -150,50 +145,52 @@ export class HistoryController {
 
   @Post(':id/verify')
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(HistoryAuthenticationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify a history record',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'History record UUID' })
   @ApiOkResponse({ type: HistoryRecordResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or review note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'History record not found' })
   @ApiConflictResponse({
     description: 'The record cannot transition to VERIFIED',
   })
-  // Keep the decorated parameters for Nest's route binding and validation.
-  /* eslint-disable @typescript-eslint/no-unused-vars */
   verify(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: VerifyHistoryRecordDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<HistoryRecordResponseDto> {
-    throw new UnauthorizedException(HISTORY_AUTH_UNAVAILABLE_MESSAGE);
+    return this.historyService.verify(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
+    );
   }
 
   @Post(':id/reject')
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(HistoryAuthenticationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Reject a history record',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'History record UUID' })
   @ApiOkResponse({ type: HistoryRecordResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or rejection note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'History record not found' })
@@ -204,8 +201,13 @@ export class HistoryController {
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: RejectHistoryRecordDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<HistoryRecordResponseDto> {
-    throw new UnauthorizedException(HISTORY_AUTH_UNAVAILABLE_MESSAGE);
+    return this.historyService.reject(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
+    );
   }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 }

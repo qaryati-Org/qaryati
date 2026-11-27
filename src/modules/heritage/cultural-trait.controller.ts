@@ -10,8 +10,6 @@ import {
   Patch,
   Post,
   Query,
-  UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -30,17 +28,14 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Paginated } from '../../common/pagination/paginated';
-import { Role, Roles } from '../auth';
+import type { AuthenticatedUser } from '../auth';
+import { CurrentUser, Role, Roles } from '../auth';
 import { CreateCulturalTraitDto } from './dto/create-cultural-trait.dto';
 import { CulturalTraitQueryDto } from './dto/cultural-trait-query.dto';
 import { CulturalTraitResponseDto } from './dto/cultural-trait-response.dto';
 import { RejectCulturalTraitDto } from './dto/reject-cultural-trait.dto';
 import { UpdateCulturalTraitDto } from './dto/update-cultural-trait.dto';
 import { VerifyCulturalTraitDto } from './dto/verify-cultural-trait.dto';
-import {
-  CULTURAL_TRAIT_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
-  CulturalTraitReviewAuthenticationGuard,
-} from './cultural-trait-review-authentication.guard';
 import { CulturalTraitService } from './cultural-trait.service';
 
 @ApiTags('cultural-traits')
@@ -163,52 +158,52 @@ export class CulturalTraitController {
 
   @Post(':id/verify')
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(CulturalTraitReviewAuthenticationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Verify a cultural trait',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Cultural Trait UUID' })
   @ApiOkResponse({ type: CulturalTraitResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or review note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'Cultural trait not found' })
   @ApiConflictResponse({
     description: 'The cultural trait cannot transition to VERIFIED',
   })
-  // Keep the decorated parameters for Nest's route binding and validation.
-  /* eslint-disable @typescript-eslint/no-unused-vars */
   verify(
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: VerifyCulturalTraitDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<CulturalTraitResponseDto> {
-    throw new UnauthorizedException(
-      CULTURAL_TRAIT_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
+    return this.culturalTraitService.verify(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
     );
   }
 
   @Post(':id/reject')
   @Roles(Role.VERIFIER, Role.ADMIN)
-  @UseGuards(CulturalTraitReviewAuthenticationGuard)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Reject a cultural trait',
     description:
-      'Disabled until trusted authentication and role enforcement are integrated.',
+      'Requires a VERIFIER or ADMIN access token. The reviewer is the caller.',
   })
   @ApiParam({ name: 'villageId', type: String, description: 'Village UUID' })
   @ApiParam({ name: 'id', type: String, description: 'Cultural Trait UUID' })
   @ApiOkResponse({ type: CulturalTraitResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid IDs or rejection note' })
   @ApiUnauthorizedResponse({
-    description: 'Authenticated reviewer identity is not configured',
+    description: 'Missing or invalid access token',
   })
   @ApiForbiddenResponse({ description: 'Reviewer role is not permitted' })
   @ApiNotFoundResponse({ description: 'Cultural trait not found' })
@@ -219,10 +214,13 @@ export class CulturalTraitController {
     @Param('villageId', new ParseUUIDPipe()) villageId: string,
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: RejectCulturalTraitDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<CulturalTraitResponseDto> {
-    throw new UnauthorizedException(
-      CULTURAL_TRAIT_REVIEW_AUTH_UNAVAILABLE_MESSAGE,
+    return this.culturalTraitService.reject(
+      villageId,
+      id,
+      { reviewerId: user.id },
+      dto,
     );
   }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 }

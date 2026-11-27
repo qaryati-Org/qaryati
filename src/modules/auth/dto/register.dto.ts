@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, Length, MaxLength } from 'class-validator';
+import { IsEmail, IsString, Length, Matches, MaxLength } from 'class-validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'lina@example.com' })
@@ -17,5 +17,7 @@ export class RegisterDto {
   @ApiProperty({ example: 'Lina', maxLength: 100 })
   @IsString()
   @Length(1, 100)
+  // UsersService trims the name, so a name of only spaces would be saved as ''.
+  @Matches(/\S/, { message: 'displayName must not be blank' })
   displayName!: string;
 }

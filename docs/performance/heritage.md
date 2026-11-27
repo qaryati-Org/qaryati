@@ -1,7 +1,7 @@
 # Performance: public Heritage listings
 
-**Status: Baseline benchmark completed on November 27, 2026.** This is a
-baseline, not an optimization comparison.
+**Status: 60-record-per-village-per-type baseline benchmark completed on
+November 27, 2026.** This is a baseline, not an optimization comparison.
 
 The run used Grafana k6 v2.4.0 on Windows against the local Qaryati NestJS
 production build. PostgreSQL 16 ran in Docker on port 5433, using the isolated
@@ -44,12 +44,30 @@ village by default. It cycles through each table's actual enum values, giving
 each type enough records to return results. The minimum configurable count is
 20 per table per village, so the second page of 10 items is populated.
 
-The fixture uses up to five existing synthetic villages named `PERF Village
+The fixture defaults to five existing synthetic villages named `PERF Village
 ...`, created by the existing performance village seed. It creates dedicated
 Source rows and prints a comma-separated `VILLAGE_IDS=...` line for the k6
 command. Village count is configurable from 1 to 20 with `--villages`;
-records per village are configurable from 20 to 500 with
+records per village are configurable from 20 to 2,000 with
 `--records-per-village`.
+
+After setting the required `qaryati_perf` environment variables described
+under Local setup and creating five synthetic villages, run:
+
+```bash
+npm run seed:perf:heritage -- --villages 5 --records-per-village 2000
+```
+
+This generates 10,000 VERIFIED landmarks and 10,000 VERIFIED cultural traits
+(20,000 Heritage records total). The seed keeps
+`DEFAULT_RECORDS_PER_VILLAGE = 60`, so the original dataset can still be
+reproduced with `npm run seed:perf:heritage`. Record numbers from 1 through
+2,000 are included in each name, keeping names distinct within each village;
+the generated names fit the 255-character name columns.
+
+The results below apply only to the 60-record-per-village-per-type dataset.
+A new baseline using 2,000 records per village per type is required before
+adding indexes; no results for that expanded dataset are available yet.
 
 The benchmark dataset contained five synthetic villages, with 60 VERIFIED
 landmarks and 60 VERIFIED cultural traits per village: 300 records of each
@@ -153,7 +171,7 @@ npm run seed:perf:heritage -- --clear
 The fixture does not remove its synthetic villages; those remain available
 for other local performance tests.
 
-## Results
+## Results: 60-record-per-village-per-type baseline
 
 | Metric                       |                         Result |
 | ---------------------------- | -----------------------------: |
@@ -196,12 +214,12 @@ pagination over actual records. The script therefore requires non-empty data
 on every request and fails its checks threshold otherwise.
 
 Verification endpoints are excluded because this is a read-heavy scenario.
-The Landmark and Cultural Trait verify/reject routes currently return 401
-until trusted authentication is implemented, so they cannot provide a
-representative review workload.
+Landmark and Cultural Trait verify/reject routes are enabled and require an
+authenticated `VERIFIER` or `ADMIN`; they are not part of this benchmark's
+read workload.
 
-The dataset is deliberately limited to five synthetic villages and 300
-records of each Heritage type. These results may not generalize to larger or
-different datasets or deployments. Results also depend on the machine,
+The measured dataset is deliberately limited to five synthetic villages and
+300 records of each Heritage type. These results may not generalize to larger
+or different datasets or deployments. Results also depend on the machine,
 PostgreSQL and API configuration, and whether k6, the API, and the database
 share a host.

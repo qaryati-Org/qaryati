@@ -107,6 +107,9 @@ flowchart LR
 Full description with module, request-flow and CI diagrams:
 **[docs/architecture.md](docs/architecture.md)**.
 
+Database schema and modeling decisions:
+**[Database ERD and data modeling decisions](docs/erd.md)**.
+
 ## Project structure
 
 ```

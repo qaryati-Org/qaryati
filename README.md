@@ -76,6 +76,8 @@ Results and analysis: [docs/performance/search.md](docs/performance/search.md).
 Trigram indexes made search about 22× faster at p95 (470 ms → 22 ms) with 50
 concurrent users on 50,000 villages.
 
+Heritage list benchmark: [docs/performance/heritage.md](docs/performance/heritage.md).
+
 ## Architecture
 
 A **modular monolith**: one NestJS application and one PostgreSQL database,

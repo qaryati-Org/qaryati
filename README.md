@@ -152,6 +152,22 @@ src/
 - Send `x-correlation-id` to trace a request; it is echoed in the response,
   the logs, and error bodies.
 
+## Authentication
+
+- `GET` endpoints are public. Write endpoints need
+  `Authorization: Bearer <accessToken>` and a role: create/update `EDITOR`
+  or `ADMIN`, verify/reject `VERIFIER` or `ADMIN`, delete `ADMIN` (the one
+  exception is listed in [docs/auth.md](docs/auth.md#roles)).
+- Get tokens from `POST /api/v1/auth/register` (always `VIEWER`) or
+  `POST /api/v1/auth/login`; renew them with `POST /api/v1/auth/refresh`.
+- No token on a protected endpoint returns `401`, a role that is not allowed
+  returns `403`, too many login attempts return `429`.
+- Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` to create the first admin
+  at startup. In production `JWT_ACCESS_SECRET` is required.
+
+Details, configuration and test helpers: [docs/auth.md](docs/auth.md).
+Design decisions: [ADR-002](docs/adr/002-auth-and-token-strategy.md).
+
 ## Population data rules
 
 - A population value of `0` is valid and represents a documented depopulated

@@ -75,6 +75,8 @@ npm run seed:perf -- --clear          # remove all synthetic rows
 npm run seed:perf                        # the data set the tests are measured on
 npm run build && node dist/main          # run the API from the production build
 k6 run k6/search-read-heavy.js           # read-heavy: GET /villages/search
+k6 run -e ADMIN_EMAIL=… -e ADMIN_PASSWORD=… k6/authenticated-write.js
+                                         # authenticated writes + logins
 ```
 
 Results and analysis: [docs/performance/search.md](docs/performance/search.md).
@@ -82,6 +84,12 @@ Trigram indexes made search about 22× faster at p95 (470 ms → 22 ms) with 50
 concurrent users on 50,000 villages.
 
 Heritage list benchmark: [docs/performance/heritage.md](docs/performance/heritage.md).
+
+Authenticated write test: [docs/performance/write.md](docs/performance/write.md).
+Replacing full village loads in existence checks with one indexed query gave
+about 9% more throughput and 14% lower p95 (170 ms → 147 ms) with 50
+concurrent editors. The write test needs an EDITOR or ADMIN account and a
+high `AUTH_RATE_LIMIT` (all virtual users share one IP).
 
 ## Architecture
 

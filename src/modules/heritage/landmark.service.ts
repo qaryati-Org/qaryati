@@ -38,7 +38,7 @@ export class LandmarkService {
     villageId: string,
     dto: CreateLandmarkDto,
   ): Promise<LandmarkResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     await this.sources.ensureExists(dto.sourceId);
 
     const landmark = this.landmarks.create({
@@ -66,7 +66,7 @@ export class LandmarkService {
     villageId: string,
     query: LandmarkQueryDto,
   ): Promise<Paginated<LandmarkResponseDto>> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.landmarks
       .createQueryBuilder('landmark')
@@ -107,7 +107,7 @@ export class LandmarkService {
     villageId: string,
     landmarkId: string,
   ): Promise<LandmarkResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     const landmark = await this.landmarks.findOneBy({
       id: landmarkId,
       villageId,

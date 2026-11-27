@@ -107,7 +107,7 @@ export class PopulationService {
     villageId: string,
     query: PopulationRecordQueryDto,
   ): Promise<Paginated<PopulationRecordResponseDto>> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.populationRecords
       .createQueryBuilder('record')
@@ -148,7 +148,7 @@ export class PopulationService {
     villageId: string,
     query: PopulationHistoryQueryDto,
   ): Promise<Paginated<PopulationHistoryResponseDto>> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
 
     const [result] = await this.dataSource.query<
       PopulationHistoryQueryResult[]
@@ -191,7 +191,7 @@ export class PopulationService {
     villageId: string,
     dto: CreatePopulationRecordDto,
   ): Promise<PopulationRecordResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     await this.sources.ensureExists(dto.sourceId);
     this.assertYearNotInFuture(dto.referenceYear);
 

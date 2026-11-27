@@ -43,7 +43,7 @@ export class HistoryService {
     villageId: string,
     dto: CreateHistoryRecordDto,
   ): Promise<HistoryRecordResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     await this.sources.ensureExists(dto.sourceId);
     this.assertYearRange(dto.startYear, dto.endYear);
 
@@ -68,7 +68,7 @@ export class HistoryService {
     villageId: string,
     query: HistoryRecordQueryDto,
   ): Promise<Paginated<HistoryRecordResponseDto>> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.historyRecords
       .createQueryBuilder('record')
@@ -109,7 +109,7 @@ export class HistoryService {
     villageId: string,
     recordId: string,
   ): Promise<HistoryRecordResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     const record = await this.historyRecords.findOneBy({
       id: recordId,
       villageId,

@@ -124,7 +124,7 @@ describe('PopulationService', () => {
     take: jest.Mock;
     getManyAndCount: jest.Mock;
   };
-  let villages: { findOne: jest.Mock };
+  let villages: { ensureExists: jest.Mock };
   let sources: { ensureExists: jest.Mock; findByIds: jest.Mock };
   let dataSource: { query: jest.Mock };
   let service: PopulationService;
@@ -159,7 +159,7 @@ describe('PopulationService', () => {
       remove: jest.fn().mockResolvedValue(undefined),
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     };
-    villages = { findOne: jest.fn().mockResolvedValue({ id: VILLAGE_ID }) };
+    villages = { ensureExists: jest.fn().mockResolvedValue(undefined) };
     sources = {
       ensureExists: jest.fn().mockResolvedValue(undefined),
       findByIds: jest.fn().mockResolvedValue([]),
@@ -199,7 +199,7 @@ describe('PopulationService', () => {
 
       const result = await service.create(VILLAGE_ID, dto);
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(sources.ensureExists).toHaveBeenCalledWith(SOURCE_ID);
       expect(repository.create).toHaveBeenCalledWith({
         villageId: VILLAGE_ID,
@@ -265,7 +265,7 @@ describe('PopulationService', () => {
     });
 
     it('does not save when the village does not exist', async () => {
-      villages.findOne.mockRejectedValue(
+      villages.ensureExists.mockRejectedValue(
         new NotFoundException(`Village ${VILLAGE_ID} not found`),
       );
 
@@ -425,14 +425,14 @@ describe('PopulationService', () => {
 
       await service.history(VILLAGE_ID, historyQueryDto());
 
-      expect(villages.findOne.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(villages.ensureExists.mock.invocationCallOrder[0]).toBeLessThan(
         dataSource.query.mock.invocationCallOrder[0],
       );
     });
 
     it('propagates an unknown village error without executing SQL', async () => {
       const error = new NotFoundException('Village not found');
-      villages.findOne.mockRejectedValueOnce(error);
+      villages.ensureExists.mockRejectedValueOnce(error);
 
       await expect(service.history(VILLAGE_ID, historyQueryDto())).rejects.toBe(
         error,
@@ -957,8 +957,8 @@ describe('PopulationService', () => {
     it('checks village existence before querying and defaults to VERIFIED', async () => {
       await service.list(VILLAGE_ID, queryDto());
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
-      expect(villages.findOne.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists.mock.invocationCallOrder[0]).toBeLessThan(
         repository.createQueryBuilder.mock.invocationCallOrder[0],
       );
       expect(repository.createQueryBuilder).toHaveBeenCalledWith('record');
@@ -1053,7 +1053,7 @@ describe('PopulationService', () => {
     });
 
     it('returns 404 for an unknown village without querying records', async () => {
-      villages.findOne.mockRejectedValue(
+      villages.ensureExists.mockRejectedValue(
         new NotFoundException(`Village ${VILLAGE_ID} not found`),
       );
 

@@ -38,7 +38,7 @@ export class CulturalTraitService {
     villageId: string,
     dto: CreateCulturalTraitDto,
   ): Promise<CulturalTraitResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     await this.sources.ensureExists(dto.sourceId);
 
     const culturalTrait = this.culturalTraits.create({
@@ -66,7 +66,7 @@ export class CulturalTraitService {
     villageId: string,
     query: CulturalTraitQueryDto,
   ): Promise<Paginated<CulturalTraitResponseDto>> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
 
     const queryBuilder = this.culturalTraits
       .createQueryBuilder('culturalTrait')
@@ -109,7 +109,7 @@ export class CulturalTraitService {
     villageId: string,
     culturalTraitId: string,
   ): Promise<CulturalTraitResponseDto> {
-    await this.villages.findOne(villageId);
+    await this.villages.ensureExists(villageId);
     const culturalTrait = await this.culturalTraits.findOneBy({
       id: culturalTraitId,
       villageId,

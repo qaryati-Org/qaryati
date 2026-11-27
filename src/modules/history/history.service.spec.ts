@@ -104,7 +104,7 @@ describe('HistoryService', () => {
     take: jest.Mock;
     getManyAndCount: jest.Mock;
   };
-  let villages: { findOne: jest.Mock };
+  let villages: { ensureExists: jest.Mock };
   let sources: { ensureExists: jest.Mock; findByIds: jest.Mock };
   let service: HistoryService;
 
@@ -141,7 +141,7 @@ describe('HistoryService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 1 }),
       createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     };
-    villages = { findOne: jest.fn().mockResolvedValue({ id: VILLAGE_ID }) };
+    villages = { ensureExists: jest.fn().mockResolvedValue(undefined) };
     sources = {
       ensureExists: jest.fn().mockResolvedValue(undefined),
       findByIds: jest.fn((ids: string[]) =>
@@ -160,7 +160,7 @@ describe('HistoryService', () => {
     it('creates a PENDING record with null review metadata', async () => {
       const result = await service.create(VILLAGE_ID, createDto());
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(sources.ensureExists).toHaveBeenCalledWith(SOURCE_ID);
       expect(repository.create).toHaveBeenCalledWith({
         villageId: VILLAGE_ID,
@@ -188,7 +188,7 @@ describe('HistoryService', () => {
     });
 
     it('returns 404 for an unknown village without saving', async () => {
-      villages.findOne.mockRejectedValueOnce(
+      villages.ensureExists.mockRejectedValueOnce(
         new NotFoundException('Village not found'),
       );
 
@@ -276,7 +276,7 @@ describe('HistoryService', () => {
 
       const result = await service.list(VILLAGE_ID, queryDto());
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(queryBuilder.andWhere).toHaveBeenCalledWith(
         'record.status = :status',
         { status: VerificationStatus.VERIFIED },
@@ -373,7 +373,7 @@ describe('HistoryService', () => {
 
       const result = await service.findOne(VILLAGE_ID, RECORD_ID);
 
-      expect(villages.findOne).toHaveBeenCalledWith(VILLAGE_ID);
+      expect(villages.ensureExists).toHaveBeenCalledWith(VILLAGE_ID);
       expect(repository.findOneBy).toHaveBeenCalledWith({
         id: RECORD_ID,
         villageId: VILLAGE_ID,
@@ -432,7 +432,7 @@ describe('HistoryService', () => {
     );
 
     it('preserves village-not-found behavior', async () => {
-      villages.findOne.mockRejectedValueOnce(
+      villages.ensureExists.mockRejectedValueOnce(
         new NotFoundException('Village not found'),
       );
 

@@ -24,6 +24,7 @@ describe('VillageService (writes)', () => {
     save: jest.Mock;
     findOne: jest.Mock;
     findOneBy: jest.Mock;
+    existsBy: jest.Mock;
     remove: jest.Mock;
   };
   let governorates: { existsBy: jest.Mock };
@@ -58,6 +59,7 @@ describe('VillageService (writes)', () => {
         }),
       ),
       findOneBy: jest.fn(),
+      existsBy: jest.fn(),
       remove: jest.fn(),
     };
     governorates = {
@@ -259,6 +261,24 @@ describe('VillageService (writes)', () => {
 
       await expect(service.remove('v-1')).rejects.toBeInstanceOf(
         ConflictException,
+      );
+    });
+  });
+
+  describe('ensureExists', () => {
+    it('resolves for an existing village without loading relations', async () => {
+      villages.existsBy.mockResolvedValue(true);
+
+      await expect(service.ensureExists('v-1')).resolves.toBeUndefined();
+      expect(villages.existsBy).toHaveBeenCalledWith({ id: 'v-1' });
+      expect(villages.findOne).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundException for an unknown village', async () => {
+      villages.existsBy.mockResolvedValue(false);
+
+      await expect(service.ensureExists('missing')).rejects.toBeInstanceOf(
+        NotFoundException,
       );
     });
   });

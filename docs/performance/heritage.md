@@ -129,7 +129,7 @@ the fixture:
 
 ```bash
 mkdir -p k6/results
-"/c/Program Files/k6/k6.exe" run \
+k6 run \
   -e BASE_URL=http://localhost:3000 \
   -e LABEL=heritage-local \
   -e VILLAGE_IDS=uuid1,uuid2,uuid3,uuid4,uuid5 \

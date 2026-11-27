@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppConfig } from '../../config/configuration';
 import { UsersModule } from '../users/users.module';
@@ -27,6 +28,17 @@ import { RefreshTokenService } from './refresh-token.service';
         },
         verifyOptions: { algorithms: ['HS256'] },
       }),
+    }),
+    // Only used by login and register (via @UseGuards(ThrottlerGuard)), so
+    // the rest of the API is not rate limited by this module.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<AppConfig, true>) => [
+        {
+          ttl: config.get('auth.rateLimitTtlSeconds', { infer: true }) * 1000,
+          limit: config.get('auth.rateLimit', { infer: true }),
+        },
+      ],
     }),
   ],
   controllers: [AuthController],

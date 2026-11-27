@@ -30,6 +30,8 @@ export const configuration = () => ({
     accessSecret: process.env.JWT_ACCESS_SECRET ?? DEV_ONLY_JWT_SECRET,
     accessTtlSeconds: Number(process.env.JWT_ACCESS_TTL_SECONDS ?? 900),
     refreshTtlSeconds: Number(process.env.JWT_REFRESH_TTL_SECONDS ?? 604800),
+    rateLimit: Number(process.env.AUTH_RATE_LIMIT ?? 5),
+    rateLimitTtlSeconds: Number(process.env.AUTH_RATE_LIMIT_TTL_SECONDS ?? 60),
     adminEmail: process.env.ADMIN_EMAIL,
     adminPassword: process.env.ADMIN_PASSWORD,
   },

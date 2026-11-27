@@ -15,11 +15,16 @@ All routes use the `/api/v1` prefix. Village and trait IDs are UUIDs.
 | Method and route | Behavior |
 | --- | --- |
 | `GET /villages/:villageId/cultural-traits` | Public, paginated list of VERIFIED traits |
+| `GET /villages/:villageId/cultural-traits/:id` | Public lookup of a VERIFIED trait; returns 200 |
 | `POST /villages/:villageId/cultural-traits` | Create a trait; returns 201 |
 | `PATCH /villages/:villageId/cultural-traits/:id` | Update a PENDING trait; returns 200 |
 | `DELETE /villages/:villageId/cultural-traits/:id` | Delete a PENDING or REJECTED trait; returns 204 |
 | `POST /villages/:villageId/cultural-traits/:id/verify` | Currently returns 401 |
 | `POST /villages/:villageId/cultural-traits/:id/reject` | Currently returns 401 |
+
+The GET-by-ID route returns only VERIFIED traits. Invalid village or trait
+UUIDs return 400; an unknown village, missing record, record from another
+village, or PENDING or REJECTED trait returns 404.
 
 Create requires `name` (non-whitespace, up to 255 characters), `type`, a
 non-whitespace `description` (up to 10,000 characters), and UUID `sourceId`.
@@ -61,10 +66,15 @@ cannot be edited or deleted; PENDING and REJECTED traits can be deleted.
 Review updates store the new status, server-set `reviewedAt`, trusted
 `reviewedById`, and `reviewNote` together.
 
-The global `RolesGuard` is currently permissive. Create, update, and delete
-have `@Roles` metadata, but those roles are not enforced; these routes are
-reachable without authentication. The verify and reject HTTP routes
-deliberately fail closed with 401 until trusted authentication is implemented.
+JWT authentication is available through the global guard. Requests without a
+token are allowed as anonymous, and malformed or invalid bearer tokens return
+401. Create, update, and delete have `@Roles` metadata, but the global
+`RolesGuard` remains permissive and does not enforce those permissions, so
+these routes are reachable without authentication.
+
+The review controller does not yet pass the authenticated user as the
+trusted reviewer. The verify and reject HTTP routes deliberately remain
+blocked with 401 until role enforcement and reviewer identity are connected.
 
 ## Tests
 

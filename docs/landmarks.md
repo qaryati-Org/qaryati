@@ -16,11 +16,16 @@ All routes are under `/api/v1`; village and landmark IDs are UUIDs.
 | Method and route | Behavior |
 | --- | --- |
 | `GET /villages/:villageId/landmarks` | Public, paginated list of VERIFIED landmarks |
+| `GET /villages/:villageId/landmarks/:id` | Public lookup of a VERIFIED landmark; returns 200 |
 | `POST /villages/:villageId/landmarks` | Create a landmark; returns 201 |
 | `PATCH /villages/:villageId/landmarks/:id` | Update a PENDING landmark; returns 200 |
 | `DELETE /villages/:villageId/landmarks/:id` | Delete a PENDING or REJECTED landmark; returns 204 |
 | `POST /villages/:villageId/landmarks/:id/verify` | Currently returns 401 |
 | `POST /villages/:villageId/landmarks/:id/reject` | Currently returns 401 |
+
+The GET-by-ID route returns only VERIFIED landmarks. Invalid village or
+landmark UUIDs return 400; an unknown village, missing record, record from
+another village, or PENDING or REJECTED record returns 404.
 
 Create requires `name` (non-whitespace, up to 255 characters), `type`,
 `description` (non-whitespace, up to 10,000 characters), and UUID `sourceId`.
@@ -58,13 +63,17 @@ deleted; PENDING and REJECTED records can be deleted.
 
 The service implements verify and reject with a conditional status update and
 stores `status`, server-set `reviewedAt`, trusted `reviewedById`, and
-`reviewNote` together. The HTTP review routes remain guarded and return 401
-until trusted authentication is implemented.
+`reviewNote` together. JWT authentication is available, but the review
+controller does not yet pass the authenticated user as the trusted reviewer.
+The verify and reject HTTP routes remain intentionally blocked with 401 until
+role enforcement and reviewer identity are connected.
 
 Create, update, and delete currently have `@Roles` metadata, but the global
-`RolesGuard` is permissive and does not enforce it. Those HTTP routes are
-reachable without authentication. This is a current authorization limitation,
-not a secure permission check.
+`RolesGuard` is permissive and does not enforce it. The global JWT guard allows
+requests without a token as anonymous and rejects malformed or invalid bearer
+tokens with 401. These write routes are therefore reachable without
+authentication. This is a current authorization limitation, not a secure
+permission check.
 
 ## Tests
 

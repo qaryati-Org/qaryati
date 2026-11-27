@@ -63,7 +63,7 @@ The migration names its checks and indexes explicitly:
 
 All routes use the `/api/v1` prefix. Village and record path IDs are UUIDs.
 
-### Public listing
+### Public read endpoints
 
 `GET /api/v1/villages/:villageId/history`
 
@@ -90,6 +90,11 @@ use the standard pagination envelope:
 }
 ```
 
+`GET /api/v1/villages/:villageId/history/:id` returns one record only when
+its status is `VERIFIED`. Invalid village or record UUIDs return `400`.
+An unknown village, a missing record, a record belonging to another village,
+or a `PENDING` or `REJECTED` record returns `404`.
+
 ### Create, update, and delete
 
 The current CRUD routes are:
@@ -102,13 +107,12 @@ The current CRUD routes are:
 - `DELETE /api/v1/villages/:villageId/history/:id` — deletes a `PENDING` or
   `REJECTED` record and returns `204`. Verified records cannot be deleted.
 
-These routes have `@Roles` metadata, but the project's current global
-`RolesGuard` is permissive and does not enforce roles. The CRUD routes are
-therefore reachable without authentication, including by anonymous clients.
-This temporary behavior matches Population's current API behavior; it is **not
-secure authorization**. Trusted authentication and actual role enforcement
-are still required as part of Lina's authentication integration. Do not rely
-on the `@Roles` annotations as an access control boundary.
+JWT authentication is available through the global `JwtAuthGuard`: requests
+without an Authorization header are allowed as anonymous, while malformed or
+invalid bearer tokens return `401`. These CRUD routes have `@Roles` metadata,
+but the global `RolesGuard` is still permissive and does not enforce roles.
+They are therefore reachable without authentication; do not rely on the
+`@Roles` annotations as an access control boundary.
 
 Request fields:
 
@@ -139,11 +143,13 @@ permissive.
 - `POST /api/v1/villages/:villageId/history/:id/verify`
 - `POST /api/v1/villages/:villageId/history/:id/reject`
 
-Both HTTP review routes intentionally return `401` until trusted authentication
-and role enforcement are integrated. They have a History-specific guard, and
-the controller does not fabricate a reviewer identity or invoke the review
-service methods. The service implements and tests the complete verification
-workflow independently; see [Verification workflow](#verification-workflow).
+JWT authentication is available, but the review controller does not yet use
+the authenticated user as the trusted reviewer. Both HTTP review routes
+intentionally return `401` until role enforcement and reviewer identity are
+connected. They have a History-specific guard, and the controller does not
+fabricate a reviewer identity or invoke the review service methods. The
+service implements and tests the complete verification workflow
+independently; see [Verification workflow](#verification-workflow).
 When the HTTP routes are safely enabled, verify will accept an optional
 `reviewNote` (maximum 1,000 characters; explicit `null` is invalid), and reject
 will require a nonempty, non-whitespace `reviewNote` (maximum 1,000

@@ -6,6 +6,7 @@ describe('envValidationSchema auth settings', () => {
     DB_USER: 'qaryati',
     DB_PASSWORD: 'test-password',
     DB_NAME: 'qaryati',
+    GEOCODING_USER_AGENT: 'Qaryati/1.0 (contact: ci@example.com)',
   };
 
   it('falls back to the dev-only secret outside production', () => {

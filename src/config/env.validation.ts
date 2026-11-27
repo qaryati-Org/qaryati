@@ -46,8 +46,9 @@ export const envValidationSchema = Joi.object({
       'string.pattern.base':
         'GEOCODING_USER_AGENT must include a contact email in parentheses',
     })
-    .default('Qaryati/1.0 (contact: yahyajaara1411@gmail.com)'),
-  GEOCODING_TIMEOUT_MS: Joi.number().integer().positive().default(5000),
+    .required(),
+  GEOCODING_TIMEOUT_MS: Joi.number().integer().positive().default(3000),
+  GEOCODING_MAX_RETRIES: Joi.number().integer().min(0).default(2),
   GEOCODING_CACHE_TTL_MS: Joi.number().integer().positive().default(86400000),
   GEOCODING_CACHE_MAX_ENTRIES: Joi.number().integer().positive().default(1000),
 });

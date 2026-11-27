@@ -1,15 +1,20 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   HttpNetworkError,
   HttpResponseError,
 } from '../http/http-client.errors';
+import { GeocodingRetryService } from '../services/geocoding-retry.service';
+import type { AppConfig } from '../../../config/configuration';
 import { NominatimRetryPolicy } from './nominatim-retry.policy';
 
 describe('NominatimRetryPolicy', () => {
   let policy: NominatimRetryPolicy;
+  let configuredMaxRetries: number;
 
   beforeEach(() => {
-    policy = new NominatimRetryPolicy();
+    configuredMaxRetries = 2;
+    policy = createPolicy(configuredMaxRetries);
   });
 
   afterEach(() => {
@@ -17,8 +22,22 @@ describe('NominatimRetryPolicy', () => {
   });
 
   describe('maxRetries', () => {
-    it('allows a maximum of three retries', () => {
-      expect(policy.maxRetries).toBe(3);
+    it('uses the configured maximum retry count', () => {
+      expect(policy.maxRetries).toBe(configuredMaxRetries);
+    });
+
+    it('allows two retries after the initial request', async () => {
+      const retryService = new GeocodingRetryService();
+      const operation = jest
+        .fn()
+        .mockRejectedValue(new HttpNetworkError('Network failure'));
+      jest.spyOn(policy, 'getDelay').mockReturnValue(0);
+
+      await expect(retryService.execute(operation, policy)).rejects.toThrow(
+        'Network failure',
+      );
+
+      expect(operation).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -234,4 +253,12 @@ describe('NominatimRetryPolicy', () => {
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
+
+  function createPolicy(maxRetries: number): NominatimRetryPolicy {
+    const configService = {
+      get: jest.fn().mockReturnValue({ maxRetries }),
+    } as unknown as ConfigService<AppConfig, true>;
+
+    return new NominatimRetryPolicy(configService);
+  }
 });

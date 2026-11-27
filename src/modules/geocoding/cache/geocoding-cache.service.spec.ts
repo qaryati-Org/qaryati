@@ -8,8 +8,9 @@ describe('GeocodingCacheService', () => {
 
   const geocodingConfig: AppConfig['geocoding'] = {
     baseUrl: 'https://nominatim.openstreetmap.org',
-    userAgent: 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
-    timeoutMs: 5000,
+    userAgent: 'Qaryati/1.0 (contact: developer@example.com)',
+    timeoutMs: 3000,
+    maxRetries: 2,
     cacheTtlMs: 86400000,
     cacheMaxEntries: 1000,
   };

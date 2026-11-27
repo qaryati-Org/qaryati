@@ -17,10 +17,9 @@ export const configuration = () => ({
   geocoding: {
     baseUrl:
       process.env.GEOCODING_BASE_URL ?? 'https://nominatim.openstreetmap.org',
-    userAgent:
-      process.env.GEOCODING_USER_AGENT ??
-      'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
-    timeoutMs: Number(process.env.GEOCODING_TIMEOUT_MS ?? 5000),
+    userAgent: process.env.GEOCODING_USER_AGENT!,
+    timeoutMs: Number(process.env.GEOCODING_TIMEOUT_MS ?? 3000),
+    maxRetries: Number(process.env.GEOCODING_MAX_RETRIES ?? 2),
     cacheTtlMs: Number(process.env.GEOCODING_CACHE_TTL_MS ?? 86400000),
     cacheMaxEntries: Number(process.env.GEOCODING_CACHE_MAX_ENTRIES ?? 1000),
   },

@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { AppConfig } from '../../../config/configuration';
 import {
   HttpNetworkError,
   HttpResponseError,
@@ -11,7 +13,13 @@ export class NominatimRetryPolicy implements RetryPolicy {
 
   private readonly logger = new Logger(NominatimRetryPolicy.name);
 
-  readonly maxRetries = 3;
+  readonly maxRetries: number;
+
+  constructor(configService: ConfigService<AppConfig, true>) {
+    this.maxRetries = configService.get('geocoding', {
+      infer: true,
+    }).maxRetries;
+  }
 
   shouldRetry(error: unknown): boolean {
     if (error instanceof HttpNetworkError) {

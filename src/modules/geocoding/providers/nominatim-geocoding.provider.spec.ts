@@ -27,8 +27,9 @@ describe('NominatimGeocodingProvider', () => {
 
   const geocodingConfig: AppConfig['geocoding'] = {
     baseUrl: 'https://nominatim.openstreetmap.org',
-    userAgent: 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
-    timeoutMs: 5000,
+    userAgent: 'Qaryati/1.0 (contact: developer@example.com)',
+    timeoutMs: 3000,
+    maxRetries: 2,
     cacheTtlMs: 86400000,
     cacheMaxEntries: 1000,
   };
@@ -76,8 +77,6 @@ describe('NominatimGeocodingProvider', () => {
       execute: executeMock,
     } as unknown as GeocodingRetryService;
 
-    retryPolicy = new NominatimRetryPolicy();
-
     cacheGetMock = jest.fn().mockReturnValue(null);
     cacheSetMock = jest.fn();
 
@@ -91,6 +90,7 @@ describe('NominatimGeocodingProvider', () => {
     configService = {
       get: configGetMock,
     } as unknown as ConfigService<AppConfig, true>;
+    retryPolicy = new NominatimRetryPolicy(configService);
 
     provider = new NominatimGeocodingProvider(
       httpClient,
@@ -146,9 +146,9 @@ describe('NominatimGeocodingProvider', () => {
 
     expect(options).toEqual({
       headers: {
-        'User-Agent': 'Qaryati/1.0 (contact: yahyajaara1411@gmail.com)',
+        'User-Agent': 'Qaryati/1.0 (contact: developer@example.com)',
       },
-      timeoutMs: 5000,
+      timeoutMs: 3000,
     });
   });
 

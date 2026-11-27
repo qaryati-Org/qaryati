@@ -1,5 +1,14 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  HttpNetworkError,
+  HttpResponseError,
+} from '../http/http-client.errors';
 import { HttpClient, HttpResponse } from '../interfaces/http-client.interface';
 import { GeocodingResult } from '../interfaces/geocoding-provider.interface';
 import { GeocodingCacheService } from '../cache/geocoding-cache.service';
@@ -53,6 +62,18 @@ describe('NominatimGeocodingProvider', () => {
     headers: new Headers(),
     json: jest.fn().mockResolvedValue(data),
   });
+
+  const captureRejection = async (
+    promise: Promise<unknown>,
+  ): Promise<unknown> => {
+    try {
+      await promise;
+    } catch (error) {
+      return error;
+    }
+
+    throw new Error('Expected promise to reject');
+  };
 
   beforeEach(() => {
     httpGetMock = jest.fn();
@@ -198,19 +219,78 @@ describe('NominatimGeocodingProvider', () => {
     expect(executeMock).toHaveBeenCalledWith(expect.any(Function), retryPolicy);
   });
 
-  it('returns null and logs a warning for HTTP client errors', async () => {
+  it('maps network and timeout errors to service unavailable', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-    const error = new Error('HTTP request failed');
+    const error = new HttpNetworkError('Request timed out');
 
     httpGetMock.mockRejectedValue(error);
 
-    await expect(provider.geocode('Nablus, Palestine')).resolves.toBeNull();
+    const rejection = await captureRejection(
+      provider.geocode('Nablus, Palestine'),
+    );
 
+    expect(rejection).toBeInstanceOf(ServiceUnavailableException);
+    if (rejection instanceof ServiceUnavailableException) {
+      expect(rejection.getStatus()).toBe(503);
+      expect(rejection.message).toBe('Geocoding provider is unavailable');
+    }
     expect(warnSpy).toHaveBeenCalled();
     expect(cacheSetMock).not.toHaveBeenCalled();
   });
 
-  it('returns null and logs a warning for response parser errors', async () => {
+  it('maps an exhausted HTTP 429 response to service unavailable', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const error = new HttpResponseError(
+      429,
+      new Headers({ 'Retry-After': '1' }),
+    );
+    const realRetryService = new GeocodingRetryService();
+    const executeSpy = jest.spyOn(realRetryService, 'execute');
+    const delaySpy = jest.spyOn(retryPolicy, 'getDelay').mockReturnValue(0);
+    provider = new NominatimGeocodingProvider(
+      httpClient,
+      responseParser,
+      realRetryService,
+      retryPolicy,
+      cacheService,
+      configService,
+    );
+    httpGetMock.mockRejectedValue(error);
+
+    const rejection = await captureRejection(
+      provider.geocode('Nablus, Palestine'),
+    );
+
+    expect(rejection).toBeInstanceOf(ServiceUnavailableException);
+    if (rejection instanceof ServiceUnavailableException) {
+      expect(rejection.getStatus()).toBe(503);
+      expect(rejection.message).toBe('Geocoding provider is unavailable');
+    }
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    expect(delaySpy).toHaveBeenCalledTimes(2);
+    expect(httpGetMock).toHaveBeenCalledTimes(3);
+    expect(warnSpy).toHaveBeenCalled();
+    expect(cacheSetMock).not.toHaveBeenCalled();
+  });
+
+  it('maps other upstream HTTP failures to bad gateway', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    executeMock.mockRejectedValue(new HttpResponseError(500, new Headers()));
+
+    const rejection = await captureRejection(
+      provider.geocode('Nablus, Palestine'),
+    );
+
+    expect(rejection).toBeInstanceOf(BadGatewayException);
+    if (rejection instanceof BadGatewayException) {
+      expect(rejection.getStatus()).toBe(502);
+      expect(rejection.message).toBe('Geocoding provider request failed');
+    }
+    expect(warnSpy).toHaveBeenCalled();
+    expect(cacheSetMock).not.toHaveBeenCalled();
+  });
+
+  it('maps response parser errors to bad gateway', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const error = new Error('Invalid response');
 
@@ -220,8 +300,15 @@ describe('NominatimGeocodingProvider', () => {
       throw error;
     });
 
-    await expect(provider.geocode('Nablus, Palestine')).resolves.toBeNull();
+    const rejection = await captureRejection(
+      provider.geocode('Nablus, Palestine'),
+    );
 
+    expect(rejection).toBeInstanceOf(BadGatewayException);
+    if (rejection instanceof BadGatewayException) {
+      expect(rejection.getStatus()).toBe(502);
+      expect(rejection.message).toBe('Geocoding provider request failed');
+    }
     expect(warnSpy).toHaveBeenCalled();
     expect(cacheSetMock).not.toHaveBeenCalled();
   });

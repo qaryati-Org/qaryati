@@ -172,6 +172,8 @@ src/
   returns `403`, too many login attempts return `429`.
 - Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` to create the first admin
   at startup. In production `JWT_ACCESS_SECRET` is required.
+- CORS is off by default. To call the API from a browser app on another
+  origin, list it in `CORS_ORIGINS`, e.g. `http://localhost:5173`.
 
 Details, configuration and test helpers: [docs/auth.md](docs/auth.md).
 Design decisions: [ADR-002](docs/adr/002-auth-and-token-strategy.md).

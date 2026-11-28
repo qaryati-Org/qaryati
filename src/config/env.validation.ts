@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { isValidCorsOrigin, parseCorsOrigins } from '../modules/auth/cors';
 
 export const DEV_ONLY_JWT_SECRET =
   'dev-only-jwt-secret-never-use-in-production';
@@ -69,6 +70,20 @@ export const envValidationSchema = Joi.object({
   // Max login/register attempts per client IP within the window.
   AUTH_RATE_LIMIT: Joi.number().integer().min(1).default(5),
   AUTH_RATE_LIMIT_TTL_SECONDS: Joi.number().integer().min(1).default(60),
+  // Browser origins allowed to call the API; empty keeps CORS off.
+  CORS_ORIGINS: Joi.string()
+    .allow('')
+    .default('')
+    .custom((value: string, helpers) =>
+      parseCorsOrigins(value).every(isValidCorsOrigin)
+        ? value
+        : helpers.error('any.invalid'),
+    )
+    .messages({
+      'any.invalid':
+        'CORS_ORIGINS must be a comma-separated list of http(s) origins ' +
+        'without paths or "*", e.g. http://localhost:5173',
+    }),
 
   // Optional first admin, created on startup if no user has this email yet.
   ADMIN_EMAIL: Joi.string().email(),

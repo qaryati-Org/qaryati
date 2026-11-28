@@ -21,21 +21,31 @@ export interface VillageSearchRow {
 }
 
 export class VillageSearchResultDto {
-  @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty() nameAr!: string;
-  @ApiProperty({ nullable: true, type: String }) nameEn!: string | null;
+  @ApiProperty({
+    format: 'uuid',
+    example: 'dcb3e6f5-5918-4f90-a821-452873eb79ff',
+  })
+  id!: string;
+  @ApiProperty({ example: 'برقة' }) nameAr!: string;
+  @ApiProperty({ nullable: true, type: String, example: 'Burqa' })
+  nameEn!: string | null;
   @ApiProperty({ type: GovernorateResponseDto })
   governorate!: GovernorateResponseDto;
-  @ApiProperty({ description: 'The name that matched the search text' })
+  @ApiProperty({
+    description: 'The name that matched the search text',
+    example: 'Burqa',
+  })
   matchedName!: string;
   @ApiProperty({
     enum: MATCHED_BY,
     description: 'Which name matched: current Arabic/English or an alternative',
+    example: 'NAME_EN',
   })
   matchedBy!: MatchedBy;
   @ApiProperty({
     enum: ['EXACT', 'PREFIX', 'CONTAINS'],
     description: 'How the name matched',
+    example: 'EXACT',
   })
   match!: 'EXACT' | 'PREFIX' | 'CONTAINS';
 

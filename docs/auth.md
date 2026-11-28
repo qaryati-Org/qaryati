@@ -66,6 +66,22 @@ curl -X POST http://localhost:3000/api/v1/auth/logout \
 In Swagger UI (`/api/docs`) or API-Dog, use **Authorize** / Bearer auth and
 paste the access token.
 
+### In API-Dog
+
+Every auth and audit endpoint documents example requests, example responses
+and its real error responses (`400`, `401`, `403`, `409`, `429`) in the
+shared error format, so an import brings them along:
+
+1. Start the API, then in API-Dog: **Import** → **OpenAPI/Swagger** → URL
+   `http://localhost:3000/api/docs-json` (re-import after API changes).
+2. Set the environment base URL to `http://localhost:3000`.
+3. Run `POST /api/v1/auth/login` and copy `accessToken`.
+4. In the project's or folder's **Auth** settings choose **Bearer Token** and
+   paste it. Endpoints with `@Roles(...)` (the lock in Swagger UI) use it;
+   public endpoints work without it.
+5. When it expires (15 min), run `POST /api/v1/auth/refresh` with the
+   newest `refreshToken` and paste the new `accessToken`.
+
 ### Endpoints
 
 | Method and path | Body | Success | Errors |

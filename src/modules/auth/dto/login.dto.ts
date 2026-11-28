@@ -8,7 +8,7 @@ export class LoginDto {
   email!: string;
 
   // No minimum here: login must not reveal the password rules of an account.
-  @ApiProperty()
+  @ApiProperty({ example: 'a long enough password' })
   @IsString()
   @MaxLength(128)
   password!: string;

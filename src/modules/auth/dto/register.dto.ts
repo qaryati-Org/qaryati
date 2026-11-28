@@ -9,7 +9,11 @@ export class RegisterDto {
 
   // Length over complexity rules, as NIST SP 800-63B recommends. The upper
   // bound keeps argon2 hashing cost predictable.
-  @ApiProperty({ minLength: 12, maxLength: 128 })
+  @ApiProperty({
+    minLength: 12,
+    maxLength: 128,
+    example: 'a long enough password',
+  })
   @IsString()
   @Length(12, 128)
   password!: string;

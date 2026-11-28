@@ -131,8 +131,10 @@ administrator is created.
   because reads are public. The role exists for future non-public reads.
 - Expired and revoked rows stay in `refresh_tokens`; a periodic clean-up job
   is future work.
-- CORS is not enabled, so browser front ends on another origin are not
-  supported yet. API clients, API-Dog and k6 are not affected.
+- CORS is off by default. API clients, API-Dog and k6 do not need it.
+  *Update 2026-11-28:* browser front ends on another origin can be allowed
+  with `CORS_ORIGINS` (an explicit allow-list, no `*`, no cookies); see
+  [docs/auth.md](../auth.md#security-measures).
 
 See [docs/auth.md](../auth.md) for how to use the API, the
 [auth module](../../src/modules/auth), the

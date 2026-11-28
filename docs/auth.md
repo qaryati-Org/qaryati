@@ -96,6 +96,7 @@ All use the standard error format from the
 | `JWT_REFRESH_TTL_SECONDS` | `604800` (7 days) | Refresh token lifetime |
 | `AUTH_RATE_LIMIT` | `5` | Login or register requests per IP and window |
 | `AUTH_RATE_LIMIT_TTL_SECONDS` | `60` | Rate limit window |
+| `CORS_ORIGINS` | empty (CORS off) | Browser origins allowed to call the API, comma-separated, e.g. `http://localhost:5173,https://qaryati.example` |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | not set | First admin, created at startup if no user has that email. Set both or neither |
 
 Generate a production secret with:
@@ -118,6 +119,12 @@ Never commit real secrets: only `.env.example` with placeholders is in Git.
   such as `role`, `reviewerId` or `reviewedById` are rejected (`400`); the
   reviewer of a record is always the token's user.
 - **Brute force:** login and register are rate limited per IP.
+- **Cross-origin calls (CORS):** off by default. With `CORS_ORIGINS` set,
+  only the listed origins may call the API from a browser, with the
+  `Authorization`, `Content-Type` and `x-correlation-id` headers; the browser
+  may read `x-correlation-id` back. `*`, paths and non-http(s) values are
+  refused at startup. No cookies are used, so credentials stay off and CSRF
+  does not apply.
 - **Forged tokens:** only HS256 tokens signed with the server secret are
   accepted; an invalid token is rejected, never treated as anonymous.
 - **Logs:** request bodies and headers are never logged, so passwords and
@@ -165,7 +172,6 @@ and send `Authorization: bearerFor(Role.EDITOR)`.
 - Deactivate users (`is_active = false`) instead of deleting them, because
   reviewed records reference them through `reviewed_by_id`.
 - The rate limit is in memory: per instance, reset on restart.
-- CORS is not enabled; browser apps on another origin cannot call the API yet.
 
 See [ADR-002](adr/002-auth-and-token-strategy.md) for the reasoning behind
 these choices.

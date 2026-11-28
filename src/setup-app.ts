@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { HttpExceptionFilter } from './common/errors/http-exception.filter';
 import { ValidationException } from './common/errors/validation.exception';
+import { corsOptions, parseCorsOrigins } from './modules/auth/cors';
 
 // Shared by main.ts and the e2e tests so both run the exact same pipeline.
 export function setupApp(app: INestApplication): void {
@@ -20,5 +21,8 @@ export function setupApp(app: INestApplication): void {
     }),
   );
   app.useGlobalFilters(new HttpExceptionFilter());
+  // Off unless CORS_ORIGINS lists browser origins (validated at startup).
+  const corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS);
+  if (corsOrigins.length > 0) app.enableCors(corsOptions(corsOrigins));
   app.enableShutdownHooks();
 }

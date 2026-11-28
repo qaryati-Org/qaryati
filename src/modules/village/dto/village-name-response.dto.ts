@@ -2,16 +2,30 @@ import { ApiProperty } from '@nestjs/swagger';
 import { VillageName, VillageNameType } from '../entities/village-name.entity';
 
 export class VillageNameResponseDto {
-  @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty({ format: 'uuid' }) villageId!: string;
-  @ApiProperty() name!: string;
-  @ApiProperty({ enum: VillageNameType }) type!: VillageNameType;
+  @ApiProperty({
+    format: 'uuid',
+    example: 'd4d2e55c-0a22-4d6c-ba6a-3768fb3beb4a',
+  })
+  id!: string;
+  @ApiProperty({
+    format: 'uuid',
+    example: 'dcb3e6f5-5918-4f90-a821-452873eb79ff',
+  })
+  villageId!: string;
+  @ApiProperty({ example: 'Burka' }) name!: string;
+  @ApiProperty({
+    enum: VillageNameType,
+    example: VillageNameType.ALTERNATIVE_SPELLING,
+  })
+  type!: VillageNameType;
   @ApiProperty({ example: 'en' }) language!: string;
-  @ApiProperty({ nullable: true, type: String }) period!: string | null;
-  @ApiProperty({ nullable: true, type: String }) note!: string | null;
-  @ApiProperty({ nullable: true, type: String, format: 'uuid' })
+  @ApiProperty({ nullable: true, type: String, example: null })
+  period!: string | null;
+  @ApiProperty({ nullable: true, type: String, example: null })
+  note!: string | null;
+  @ApiProperty({ nullable: true, type: String, format: 'uuid', example: null })
   sourceId!: string | null;
-  @ApiProperty() createdAt!: Date;
+  @ApiProperty({ example: '2026-11-25T08:12:13.968Z' }) createdAt!: Date;
 
   static from(name: VillageName): VillageNameResponseDto {
     return {

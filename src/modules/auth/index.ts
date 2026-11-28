@@ -4,6 +4,7 @@ export type {
   AuthenticatedRequest,
   AuthenticatedUser,
 } from './authenticated-user';
+export { apiErrorExample } from './api-error-example';
 export { CurrentUser } from './decorators/current-user.decorator';
 export { Roles, ROLES_KEY } from './decorators/roles.decorator';
 export { Role } from './enums/role.enum';

@@ -24,6 +24,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
+import { apiErrorExample } from './api-error-example';
 import { AuthenticatedUser } from './authenticated-user';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -43,9 +44,38 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   @ApiOperation({ summary: 'Create an account (always role VIEWER)' })
   @ApiCreatedResponse({ type: AuthResponseDto })
-  @ApiBadRequestResponse({ description: 'Invalid email or password length' })
-  @ApiConflictResponse({ description: 'Email already registered' })
-  @ApiTooManyRequestsResponse({ description: 'Too many attempts from this IP' })
+  @ApiBadRequestResponse(
+    apiErrorExample(
+      'Invalid email, password length or blank display name',
+      '/api/v1/auth/register',
+      'VALIDATION_ERROR',
+      'Request validation failed',
+      [
+        { field: 'email', messages: ['email must be an email'] },
+        {
+          field: 'password',
+          messages: ['password must be longer than or equal to 12 characters'],
+        },
+        { field: 'displayName', messages: ['displayName must not be blank'] },
+      ],
+    ),
+  )
+  @ApiConflictResponse(
+    apiErrorExample(
+      'Email already registered',
+      '/api/v1/auth/register',
+      'CONFLICT',
+      'A user with this email already exists',
+    ),
+  )
+  @ApiTooManyRequestsResponse(
+    apiErrorExample(
+      'Too many attempts from this IP (default 5 per minute)',
+      '/api/v1/auth/register',
+      'TOO_MANY_REQUESTS',
+      'ThrottlerException: Too Many Requests',
+    ),
+  )
   register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
     return this.auth.register(dto);
   }
@@ -56,8 +86,22 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Log in and get an access + refresh token' })
   @ApiOkResponse({ type: AuthResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Invalid email or password' })
-  @ApiTooManyRequestsResponse({ description: 'Too many attempts from this IP' })
+  @ApiUnauthorizedResponse(
+    apiErrorExample(
+      'Unknown email, wrong password or deactivated account (same answer)',
+      '/api/v1/auth/login',
+      'UNAUTHORIZED',
+      'Invalid email or password',
+    ),
+  )
+  @ApiTooManyRequestsResponse(
+    apiErrorExample(
+      'Too many attempts from this IP (default 5 per minute)',
+      '/api/v1/auth/login',
+      'TOO_MANY_REQUESTS',
+      'ThrottlerException: Too Many Requests',
+    ),
+  )
   login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     return this.auth.login(dto);
   }
@@ -70,7 +114,14 @@ export class AuthController {
       'The refresh token is single use. Reusing an old one revokes every token from that login.',
   })
   @ApiOkResponse({ type: AuthResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Invalid, expired or reused token' })
+  @ApiUnauthorizedResponse(
+    apiErrorExample(
+      'Invalid, expired or reused refresh token',
+      '/api/v1/auth/refresh',
+      'UNAUTHORIZED',
+      'Invalid or expired refresh token',
+    ),
+  )
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
     return this.auth.refresh(dto.refreshToken);
   }
@@ -87,7 +138,14 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'The user the access token belongs to' })
   @ApiOkResponse({ type: UserResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiUnauthorizedResponse(
+    apiErrorExample(
+      'Missing, invalid or expired access token',
+      '/api/v1/auth/me',
+      'UNAUTHORIZED',
+      'Invalid or expired access token',
+    ),
+  )
   async me(
     @CurrentUser() current: AuthenticatedUser | undefined,
   ): Promise<UserResponseDto> {
